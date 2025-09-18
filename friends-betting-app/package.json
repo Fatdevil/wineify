@@ -1,0 +1,13 @@
+{
+  "name": "friends-betting-app",
+  "version": "1.0.0",
+  "scripts": {
+    "test": "jest"
+  },
+  "dependencies": {
+    "jest": "^27.0.0"
+  },
+  "devDependencies": {
+    "mocha": "^9.0.0"
+  }
+}
