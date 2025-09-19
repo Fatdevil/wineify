@@ -268,6 +268,9 @@ CREATE UNIQUE INDEX "Result_winningEntryId_key" ON "public"."Result"("winningEnt
 CREATE INDEX "Payout_subCompetitionId_idx" ON "public"."Payout"("subCompetitionId");
 
 -- CreateIndex
+CREATE INDEX "Payout_entryId_idx" ON "public"."Payout"("entryId");
+
+-- CreateIndex
 CREATE INDEX "Payout_resultId_idx" ON "public"."Payout"("resultId");
 
 -- CreateIndex
@@ -293,6 +296,9 @@ CREATE INDEX "AuditLog_userId_idx" ON "public"."AuditLog"("userId");
 
 -- CreateIndex
 CREATE INDEX "AuditLog_subCompetitionId_idx" ON "public"."AuditLog"("subCompetitionId");
+
+-- CreateIndex
+CREATE INDEX "AuditLog_betId_idx" ON "public"."AuditLog"("betId");
 
 -- AddForeignKey
 ALTER TABLE "public"."Event" ADD CONSTRAINT "Event_adminId_fkey" FOREIGN KEY ("adminId") REFERENCES "public"."User"("id") ON DELETE CASCADE ON UPDATE CASCADE;

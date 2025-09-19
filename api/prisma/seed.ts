@@ -42,7 +42,7 @@ async function main() {
   });
 
   const participantNames = ['Alice', 'Bob', 'Charlie', 'Diana'];
-  const participants = [] as { id: number; displayName: string }[];
+  const participants: Array<{ id: number; displayName: string }> = [];
 
   for (const name of participantNames) {
     const participant = await prisma.participant.upsert({

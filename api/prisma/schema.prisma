@@ -242,6 +242,7 @@ model Payout {
   settlement     Settlement?    @relation("PayoutSettlement")
 
   @@unique([betId])
+  @@index([entryId])
   @@index([subCompetitionId])
   @@index([resultId])
 }
@@ -306,4 +307,5 @@ model AuditLog {
   @@index([eventId])
   @@index([userId])
   @@index([subCompetitionId])
+  @@index([betId])
 }
