@@ -1,0 +1,309 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  ADMIN
+  USER
+}
+
+enum EventStatus {
+  DRAFT
+  ACTIVE
+  CLOSED
+  ARCHIVED
+}
+
+enum SubCompStatus {
+  DRAFT
+  OPEN
+  CLOSED
+  CANCELED
+  SETTLED
+}
+
+enum BetStatus {
+  PENDING
+  ACTIVE
+  EDITED
+  REFUNDED
+  SETTLED
+  CANCELED
+}
+
+enum SettlementStatus {
+  PENDING
+  SENT
+  RECEIVED
+  CONFIRMED
+  DISPUTED
+  CANCELED
+}
+
+enum NotificationType {
+  GENERIC
+  BET_CORRECTED
+  BETTING_CLOSED
+  RESULT_RECORDED
+  SETTLEMENT_CREATED
+  SETTLEMENT_SENT
+  SETTLEMENT_RECEIVED
+}
+
+model User {
+  id             Int            @id @default(autoincrement())
+  username       String         @unique
+  displayName    String
+  email          String?        @unique
+  passwordHash   String
+  role           Role           @default(USER)
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+  events         Event[]        @relation("EventAdmin")
+  memberships    EventMember[]
+  bets           Bet[]
+  notifications  Notification[]
+  auditLogs      AuditLog[]
+  settlementsOut Settlement[]   @relation("SettlementPayer")
+  settlementsIn  Settlement[]   @relation("SettlementPayee")
+  results        Result[]       @relation("ResultRecorder")
+  correctedBets  Bet[]          @relation("BetCorrector")
+
+  @@index([username])
+}
+
+model Event {
+  id              Int              @id @default(autoincrement())
+  adminId         Int
+  admin           User             @relation("EventAdmin", fields: [adminId], references: [id], onDelete: Cascade)
+  title           String
+  description     String?
+  unitName        String
+  joinCode        String           @unique
+  houseCutBps     Int              @default(0)
+  minBetUnits     Int              @default(1)
+  maxBetUnits     Int?
+  status          EventStatus      @default(DRAFT)
+  timezone        String
+  startsAt        DateTime?
+  endsAt          DateTime?
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+  members         EventMember[]
+  participants    Participant[]
+  subCompetitions SubCompetition[]
+  notifications   Notification[]
+  auditLogs       AuditLog[]
+  settlements     Settlement[]
+
+  @@index([adminId])
+  @@index([status])
+}
+
+model EventMember {
+  id       Int      @id @default(autoincrement())
+  eventId  Int
+  userId   Int
+  role     Role     @default(USER)
+  joinedAt DateTime @default(now())
+
+  event Event @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([eventId, userId])
+  @@index([userId])
+}
+
+model Participant {
+  id          Int      @id @default(autoincrement())
+  eventId     Int
+  displayName String
+  isActive    Boolean  @default(true)
+  notes       String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  event   Event          @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  entries SubCompEntry[]
+
+  @@unique([eventId, displayName])
+  @@index([eventId, isActive])
+}
+
+model SubCompetition {
+  id                  Int           @id @default(autoincrement())
+  eventId             Int
+  title               String
+  description         String?
+  status              SubCompStatus @default(DRAFT)
+  bettingOpensAt      DateTime?
+  bettingClosesAt     DateTime?
+  finalizedAt         DateTime?
+  minBetUnitsOverride Int?
+  maxBetUnitsOverride Int?
+  houseCutBpsOverride Int?
+  createdAt           DateTime      @default(now())
+  updatedAt           DateTime      @updatedAt
+
+  event     Event          @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  entries   SubCompEntry[]
+  bets      Bet[]
+  result    Result?
+  payouts   Payout[]
+  auditLogs AuditLog[]
+
+  @@index([eventId])
+  @@index([status])
+}
+
+model SubCompEntry {
+  id               Int       @id @default(autoincrement())
+  subCompetitionId Int
+  participantId    Int?
+  label            String
+  orderIndex       Int?
+  isWithdrawn      Boolean   @default(false)
+  withdrawnAt      DateTime?
+  finalOddsDecimal Decimal?  @db.Decimal(18, 6)
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  subCompetition SubCompetition @relation(fields: [subCompetitionId], references: [id], onDelete: Cascade)
+  participant    Participant?   @relation(fields: [participantId], references: [id], onDelete: SetNull)
+  bets           Bet[]
+  payouts        Payout[]
+  winningResult  Result?        @relation("WinningEntry")
+
+  @@unique([subCompetitionId, label])
+  @@index([participantId])
+  @@index([subCompetitionId, isWithdrawn])
+}
+
+model Bet {
+  id               Int       @id @default(autoincrement())
+  subCompetitionId Int
+  entryId          Int?
+  bettorId         Int
+  amountUnits      Int
+  status           BetStatus @default(PENDING)
+  oddsSnapshot     Decimal?  @db.Decimal(18, 6)
+  correctedReason  String?
+  correctedById    Int?
+  correctedAt      DateTime?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  subCompetition SubCompetition @relation(fields: [subCompetitionId], references: [id], onDelete: Cascade)
+  entry          SubCompEntry?  @relation(fields: [entryId], references: [id], onDelete: SetNull)
+  bettor         User           @relation(fields: [bettorId], references: [id], onDelete: Cascade)
+  correctedBy    User?          @relation("BetCorrector", fields: [correctedById], references: [id], onDelete: SetNull)
+  payout         Payout?
+  auditLogs      AuditLog[]
+
+  @@index([bettorId])
+  @@index([subCompetitionId, status])
+}
+
+model Result {
+  id               Int      @id @default(autoincrement())
+  subCompetitionId Int      @unique
+  winningEntryId   Int?     @unique
+  recordedById     Int?
+  notes            String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  subCompetition SubCompetition @relation(fields: [subCompetitionId], references: [id], onDelete: Cascade)
+  winningEntry   SubCompEntry?  @relation("WinningEntry", fields: [winningEntryId], references: [id], onDelete: SetNull)
+  recordedBy     User?          @relation("ResultRecorder", fields: [recordedById], references: [id], onDelete: SetNull)
+  payouts        Payout[]
+}
+
+model Payout {
+  id               Int      @id @default(autoincrement())
+  subCompetitionId Int
+  betId            Int
+  entryId          Int?
+  resultId         Int?
+  amount           Decimal  @db.Decimal(14, 2)
+  netAmount        Decimal  @db.Decimal(14, 2)
+  houseCutAmount   Decimal  @db.Decimal(14, 2)
+  createdAt        DateTime @default(now())
+
+  subCompetition SubCompetition @relation(fields: [subCompetitionId], references: [id], onDelete: Cascade)
+  bet            Bet            @relation(fields: [betId], references: [id], onDelete: Cascade)
+  entry          SubCompEntry?  @relation(fields: [entryId], references: [id], onDelete: SetNull)
+  result         Result?        @relation(fields: [resultId], references: [id], onDelete: SetNull)
+  settlement     Settlement?    @relation("PayoutSettlement")
+
+  @@unique([betId])
+  @@index([subCompetitionId])
+  @@index([resultId])
+}
+
+model Settlement {
+  id          Int              @id @default(autoincrement())
+  eventId     Int
+  payerId     Int
+  payeeId     Int
+  payoutId    Int?             @unique
+  amount      Decimal          @db.Decimal(14, 2)
+  status      SettlementStatus @default(PENDING)
+  dueAt       DateTime?
+  sentAt      DateTime?
+  receivedAt  DateTime?
+  confirmedAt DateTime?
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+
+  event  Event   @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  payer  User    @relation("SettlementPayer", fields: [payerId], references: [id], onDelete: Cascade)
+  payee  User    @relation("SettlementPayee", fields: [payeeId], references: [id], onDelete: Cascade)
+  payout Payout? @relation("PayoutSettlement", fields: [payoutId], references: [id], onDelete: SetNull)
+
+  @@unique([eventId, payerId, payeeId])
+  @@index([payerId])
+  @@index([payeeId])
+}
+
+model Notification {
+  id        Int              @id @default(autoincrement())
+  userId    Int
+  eventId   Int?
+  type      NotificationType
+  title     String
+  body      String
+  metadata  Json?
+  readAt    DateTime?
+  createdAt DateTime         @default(now())
+
+  user  User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  event Event? @relation(fields: [eventId], references: [id], onDelete: SetNull)
+
+  @@index([userId, readAt])
+}
+
+model AuditLog {
+  id               Int      @id @default(autoincrement())
+  eventId          Int?
+  userId           Int?
+  subCompetitionId Int?
+  betId            Int?
+  action           String
+  details          Json?
+  createdAt        DateTime @default(now())
+
+  event          Event?          @relation(fields: [eventId], references: [id], onDelete: SetNull)
+  user           User?           @relation(fields: [userId], references: [id], onDelete: SetNull)
+  subCompetition SubCompetition? @relation(fields: [subCompetitionId], references: [id], onDelete: SetNull)
+  bet            Bet?            @relation(fields: [betId], references: [id], onDelete: SetNull)
+
+  @@index([eventId])
+  @@index([userId])
+  @@index([subCompetitionId])
+}

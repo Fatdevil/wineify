@@ -68,6 +68,7 @@ pids/
 *.sqlite3
 *.db
 *.sql
+!api/prisma/migrations/**/*.sql
 dump.sql
 prisma/dev.db
 prisma/*.db
