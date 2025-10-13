@@ -1,6 +1,11 @@
 import { BetStatus, Prisma, SettlementStatus, SubCompStatus } from '@prisma/client';
 import type { PrismaClient } from '@prisma/client';
 
+interface UserRecord {
+  id: string;
+  email: string;
+}
+
 interface EventRecord {
   id: string;
   name: string;
@@ -51,13 +56,26 @@ interface SettlementRecord {
   updatedAt: Date;
 }
 
+interface StatsRecord {
+  id: string;
+  userId: string;
+  totalWins: number;
+  totalLosses: number;
+  totalUnits: number;
+  streak: number;
+  xp: number;
+  lastUpdated: Date;
+}
+
 export interface MockDatabase {
+  users: UserRecord[];
   events: EventRecord[];
   subCompetitions: SubCompetitionRecord[];
   participants: ParticipantRecord[];
   bets: BetRecord[];
   results: ResultRecord[];
   settlements: SettlementRecord[];
+  stats: StatsRecord[];
 }
 
 function createResultId(index: number) {
@@ -68,19 +86,72 @@ function createSettlementId(index: number) {
   return `settlement-${index + 1}`;
 }
 
+function createStatsId(index: number) {
+  return `stats-${index + 1}`;
+}
+
 export function createMockPrisma() {
   const db: MockDatabase = {
+    users: [],
     events: [],
     subCompetitions: [],
     participants: [],
     bets: [],
     results: [],
     settlements: [],
+    stats: [],
   };
 
   const prismaMock: Record<string, any> = {
     $transaction: async <T>(callback: (tx: PrismaClient) => Promise<T>): Promise<T> => {
       return callback(prismaMock as PrismaClient);
+    },
+    user: {
+      findMany: async ({ where, select }: any) => {
+        let records = db.users.slice();
+
+        if (where?.id?.in) {
+          const set = new Set(where.id.in);
+          records = records.filter((user) => set.has(user.id));
+        }
+
+        return records.map((record) => {
+          if (!select) {
+            return { ...record };
+          }
+
+          const shaped: any = {};
+          Object.keys(select).forEach((key) => {
+            if (select[key]) {
+              shaped[key] = (record as any)[key];
+            }
+          });
+          return shaped;
+        });
+      },
+      findUnique: async ({ where, select }: any) => {
+        const record = db.users.find((user) => user.id === where.id) ?? null;
+        if (!record) {
+          return null;
+        }
+
+        if (!select) {
+          return { ...record };
+        }
+
+        const shaped: any = {};
+        Object.keys(select).forEach((key) => {
+          if (select[key]) {
+            shaped[key] = (record as any)[key];
+          }
+        });
+        return shaped;
+      },
+      create: async ({ data }: any) => {
+        const record: UserRecord = { id: data.id ?? `user-${db.users.length + 1}`, email: data.email };
+        db.users.push(record);
+        return { ...record };
+      },
     },
     event: {
       findUnique: async ({ where, include }: any) => {
@@ -198,6 +269,20 @@ export function createMockPrisma() {
       },
     },
     settlement: {
+      findUnique: async ({ where, include }: any) => {
+        const record = db.settlements.find((settlement) => settlement.id === where.id);
+        if (!record) {
+          return null;
+        }
+
+        const base: any = { ...record };
+
+        if (include?.bet) {
+          base.bet = db.bets.find((bet) => bet.id === record.betId) ?? null;
+        }
+
+        return base;
+      },
       upsert: async ({ where, update, create }: any) => {
         let record = db.settlements.find((settlement) => settlement.betId === where.betId);
         if (record) {
@@ -216,6 +301,15 @@ export function createMockPrisma() {
           db.settlements.push(record);
         }
 
+        return { ...record };
+      },
+      update: async ({ where, data }: any) => {
+        const record = db.settlements.find((settlement) => settlement.id === where.id);
+        if (!record) {
+          throw new Error('Settlement not found');
+        }
+
+        Object.assign(record, data, { updatedAt: new Date() });
         return { ...record };
       },
       findMany: async ({ where, include, orderBy }: any) => {
@@ -239,6 +333,67 @@ export function createMockPrisma() {
           ...record,
           bet: include?.bet ? db.bets.find((bet) => bet.id === record.betId) ?? null : undefined,
         }));
+      },
+    },
+    stats: {
+      create: async ({ data }: any) => {
+        const record: StatsRecord = {
+          id: createStatsId(db.stats.length),
+          userId: data.userId,
+          totalWins: data.totalWins ?? 0,
+          totalLosses: data.totalLosses ?? 0,
+          totalUnits: data.totalUnits ?? 0,
+          streak: data.streak ?? 0,
+          xp: data.xp ?? 0,
+          lastUpdated: new Date(),
+        };
+        db.stats.push(record);
+        return { ...record };
+      },
+      update: async ({ where, data }: any) => {
+        const record = db.stats.find((stat) => stat.id === where.id);
+        if (!record) {
+          throw new Error('Stats record not found');
+        }
+
+        Object.assign(record, data, { lastUpdated: new Date() });
+        return { ...record };
+      },
+      findUnique: async ({ where }: any) => {
+        let record: StatsRecord | undefined;
+
+        if (where?.id) {
+          record = db.stats.find((stat) => stat.id === where.id);
+        } else if (where?.userId) {
+          record = db.stats.find((stat) => stat.userId === where.userId);
+        }
+
+        return record ? { ...record } : null;
+      },
+      findMany: async ({ orderBy, take }: any) => {
+        let records = db.stats.slice();
+
+        if (Array.isArray(orderBy) && orderBy.length) {
+          records.sort((a, b) => {
+            for (const clause of orderBy) {
+              const [[key, direction]] = Object.entries(clause);
+              const left = (a as any)[key];
+              const right = (b as any)[key];
+              if (left === right) {
+                continue;
+              }
+              const comparison = left > right ? 1 : -1;
+              return direction === 'desc' ? -comparison : comparison;
+            }
+            return 0;
+          });
+        }
+
+        if (take) {
+          records = records.slice(0, take);
+        }
+
+        return records.map((record) => ({ ...record }));
       },
     },
   };

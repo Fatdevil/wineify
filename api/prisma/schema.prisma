@@ -50,6 +50,7 @@ model User {
   updatedAt DateTime @updatedAt
 
   bets Bet[]
+  stats Stats?
 }
 
 model Event {
@@ -152,4 +153,17 @@ model Settlement {
   result      Result?           @relation(fields: [resultId], references: [id])
 
   @@index([resultId])
+}
+
+model Stats {
+  id          String   @id @default(cuid())
+  userId      String   @unique
+  totalWins   Int      @default(0)
+  totalLosses Int      @default(0)
+  totalUnits  Int      @default(0)
+  streak      Int      @default(0)
+  xp          Int      @default(0)
+  lastUpdated DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id])
 }
