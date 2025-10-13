@@ -8,7 +8,7 @@ CREATE TYPE "public"."Role" AS ENUM ('USER', 'ADMIN');
 CREATE TYPE "public"."EventStatus" AS ENUM ('SCHEDULED', 'ACTIVE', 'COMPLETED', 'CANCELLED');
 
 -- CreateEnum
-CREATE TYPE "public"."SubCompStatus" AS ENUM ('SCHEDULED', 'ACTIVE', 'COMPLETED', 'CANCELLED');
+CREATE TYPE "public"."SubCompStatus" AS ENUM ('SCHEDULED', 'ACTIVE', 'COMPLETED', 'SETTLED', 'CANCELLED');
 
 -- CreateEnum
 CREATE TYPE "public"."BetStatus" AS ENUM ('PENDING', 'WON', 'LOST', 'CANCELLED');

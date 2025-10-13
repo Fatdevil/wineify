@@ -23,6 +23,7 @@ enum SubCompStatus {
   SCHEDULED
   ACTIVE
   COMPLETED
+  SETTLED
   CANCELLED
 }
 
