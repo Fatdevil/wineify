@@ -3,6 +3,11 @@ import express from 'express';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
 import authRouter from './routes/auth';
+import eventsRouter from './routes/events';
+import subCompetitionsRouter from './routes/subcompetitions';
+import betsRouter from './routes/bets';
+import resultsRouter from './routes/results';
+import settlementsRouter from './routes/settlements';
 import { env } from './config/env';
 
 const limiter = rateLimit({
@@ -31,5 +36,10 @@ app.get('/healthz', (_req, res) => {
 });
 
 app.use('/auth', authRouter);
+app.use('/events', eventsRouter);
+app.use('/subcompetitions', subCompetitionsRouter);
+app.use('/bets', betsRouter);
+app.use('/results', resultsRouter);
+app.use('/settlements', settlementsRouter);
 
 export { app };

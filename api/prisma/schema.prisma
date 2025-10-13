@@ -1,0 +1,154 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  USER
+  ADMIN
+}
+
+enum EventStatus {
+  SCHEDULED
+  ACTIVE
+  COMPLETED
+  CANCELLED
+}
+
+enum SubCompStatus {
+  SCHEDULED
+  ACTIVE
+  COMPLETED
+  CANCELLED
+}
+
+enum BetStatus {
+  PENDING
+  WON
+  LOST
+  CANCELLED
+}
+
+enum SettlementStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+}
+
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  password  String?
+  role      Role     @default(USER)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  bets Bet[]
+}
+
+model Event {
+  id              String            @id @default(cuid())
+  name            String
+  description     String?
+  status          EventStatus       @default(SCHEDULED)
+  startsAt        DateTime?
+  endsAt          DateTime?
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+  subCompetitions SubCompetition[]
+  participants    Participant[]
+}
+
+model SubCompetition {
+  id             String        @id @default(cuid())
+  name           String
+  description    String?
+  status         SubCompStatus @default(SCHEDULED)
+  startsAt       DateTime?
+  endsAt         DateTime?
+  eventId        String
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+  event          Event         @relation(fields: [eventId], references: [id])
+  participants   Participant[]
+  bets           Bet[]
+  results        Result[]
+
+  @@index([eventId])
+}
+
+model Participant {
+  id                String         @id @default(cuid())
+  name              String
+  alias             String?
+  eventId           String
+  subCompetitionId  String?
+  createdAt         DateTime       @default(now())
+  updatedAt         DateTime       @updatedAt
+  event             Event          @relation(fields: [eventId], references: [id])
+  subCompetition    SubCompetition? @relation(fields: [subCompetitionId], references: [id])
+  bets              Bet[]
+  results           Result[]
+
+  @@index([eventId])
+  @@index([subCompetitionId])
+}
+
+model Bet {
+  id               String         @id @default(cuid())
+  userId           String
+  subCompetitionId String
+  participantId    String?
+  resultId         String?
+  amount           Decimal        @db.Decimal(10, 2)
+  odds             Decimal        @db.Decimal(6, 2)
+  status           BetStatus      @default(PENDING)
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+  user             User           @relation(fields: [userId], references: [id])
+  subCompetition   SubCompetition @relation(fields: [subCompetitionId], references: [id])
+  participant      Participant?   @relation(fields: [participantId], references: [id])
+  result           Result?        @relation(fields: [resultId], references: [id])
+  settlement       Settlement?
+
+  @@index([userId])
+  @@index([subCompetitionId])
+  @@index([participantId])
+}
+
+model Result {
+  id               String         @id @default(cuid())
+  subCompetitionId String
+  participantId    String
+  outcome          String
+  recordedAt       DateTime       @default(now())
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+  subCompetition   SubCompetition @relation(fields: [subCompetitionId], references: [id])
+  participant      Participant    @relation(fields: [participantId], references: [id])
+  bets             Bet[]
+  settlements      Settlement[]
+
+  @@index([subCompetitionId])
+  @@unique([subCompetitionId, participantId])
+}
+
+model Settlement {
+  id          String            @id @default(cuid())
+  betId       String            @unique
+  resultId    String?
+  status      SettlementStatus  @default(PENDING)
+  settledAt   DateTime?
+  payout      Decimal?          @db.Decimal(10, 2)
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+  bet         Bet               @relation(fields: [betId], references: [id])
+  result      Result?           @relation(fields: [resultId], references: [id])
+
+  @@index([resultId])
+}

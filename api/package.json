@@ -6,7 +6,9 @@
     "build": "tsc",
     "start": "node dist/server.js",
     "dev": "ts-node src/server.ts",
-    "test": "jest --runInBand"
+    "test": "jest --runInBand",
+    "prisma:deploy": "prisma migrate deploy",
+    "db:seed": "ts-node --transpile-only prisma/seed.ts"
   },
   "keywords": [],
   "author": "",
