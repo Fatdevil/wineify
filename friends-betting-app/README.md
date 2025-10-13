@@ -1,29 +1,46 @@
-# Friends Betting App
+# Friends Betting Dashboard
 
-A minimal mobile-first dashboard for tracking friendly wagers, built with React, Vite, TailwindCSS and React Query. The UI consumes the Wineify betting API to surface event listings, personal betting activity, results and settlement obligations.
+A lightweight dashboard that visualises friends betting activity against the Wineify API. The UI is built with vanilla JavaScript and modern browser APIs so it can run without downloading npm packages — ideal for constrained or proxied environments.
 
-## Getting Started
+## Quickstart
 
-```bash
-npm install
-npm run dev
+1. Install dependencies (none required, but this command creates `package-lock.json`):
+   ```bash
+   npm install
+   ```
+2. Start the development server:
+   ```bash
+   npm run dev
+   ```
+   The dashboard is served on [http://localhost:5173](http://localhost:5173).
+3. Run the automated checks:
+   ```bash
+   npm test
+   ```
+
+## Taking a screenshot preview
+
+1. Run `npm run dev`.
+2. Open [http://localhost:5173](http://localhost:5173) in your browser.
+3. Capture the full dashboard showing the Event List, My Bets, Results summary and Settlements cards.
+
+## API expectations
+
+The dashboard expects the Wineify backend to be available at `http://localhost:3000/api`. Authentication tokens stored in `localStorage` under the key `jwt` are automatically attached to requests.
+
+## Project structure
+
+```
+friends-betting-app/
+├── index.html           # Application shell
+├── scripts/
+│   └── dev-server.mjs   # Lightweight static file server for local dev
+├── src/
+│   ├── api.js           # Fetch helpers for the Wineify API
+│   ├── app.js           # Dashboard logic & rendering
+│   ├── helpers.js       # Formatting utilities (unit tested)
+│   └── styles.css       # Tailored styling (dark mode)
+└── tests/
+    └── helpers.test.mjs # Node test exercising formatting helpers
 ```
 
-The development server assumes the backend is available at `http://localhost:3000/api` and that a JWT token is stored in `localStorage` under the key `jwt`.
-
-## Using the Results & Settlements Dashboard
-
-1. **Events** – browse current and recently closed events. Each card shows pool totals, descriptions and close dates with status badges so you can jump into the action quickly.
-2. **My Bets** – review all of your wagers with outcome, odds, stake and projected payout. Status badges (WIN/LOSS/REFUND) make it clear how each bet finished.
-3. **Results** – open the Results tab to view payout summaries for a specific event. Totals include both gross payouts and your net unit position, while each settled competition displays the winning outcome and per-unit return.
-4. **Settlements** – stay on top of outstanding obligations. Pending settlements can be marked as received, triggering an optimistic update in the UI and a `POST /settlements/:id/mark-received` request to the backend for persistence.
-
-All screens are designed mobile-first with TailwindCSS in a dark theme to match late-night score checking.
-
-## Testing
-
-```bash
-npm run test
-```
-
-Vitest and Testing Library validate API integration for each component and ensure optimistic settlement updates behave as expected.
