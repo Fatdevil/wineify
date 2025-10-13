@@ -78,7 +78,7 @@ export function createMockPrisma() {
     settlements: [],
   };
 
-  const prismaMock: Partial<PrismaClient> = {
+  const prismaMock: Record<string, any> = {
     $transaction: async <T>(callback: (tx: PrismaClient) => Promise<T>): Promise<T> => {
       return callback(prismaMock as PrismaClient);
     },
@@ -89,7 +89,7 @@ export function createMockPrisma() {
           return null;
         }
 
-        const base = { ...record };
+        const base: any = { ...record };
 
         if (include?.subCompetitions) {
           base.subCompetitions = db.subCompetitions.filter((sub) => sub.eventId === record.id).map((sub) => ({

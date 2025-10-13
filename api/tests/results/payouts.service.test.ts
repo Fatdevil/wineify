@@ -1,5 +1,4 @@
 import { Prisma, SubCompStatus, BetStatus } from '@prisma/client';
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { computePayouts } from '../../src/modules/results/payouts.service';
 import { createMockPrisma } from '../utils/mockPrisma';
 
@@ -8,12 +7,12 @@ describe('computePayouts', () => {
   const houseCut = 0.1;
 
   beforeEach(() => {
-    vi.useFakeTimers();
-    vi.setSystemTime(now);
+    jest.useFakeTimers();
+    jest.setSystemTime(now);
   });
 
   afterEach(() => {
-    vi.useRealTimers();
+    jest.useRealTimers();
   });
 
   it('computes pari-mutuel payouts using total pool, house cut, and winning stake', async () => {

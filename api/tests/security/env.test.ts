@@ -3,7 +3,7 @@ describe('environment hardening', () => {
 
   beforeEach(() => {
     process.env = { ...ORIGINAL_ENV };
-    vi.resetModules();
+    jest.resetModules();
   });
 
   afterAll(() => {
