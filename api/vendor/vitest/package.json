@@ -1,0 +1,15 @@
+{
+  "name": "vitest",
+  "version": "1.6.0",
+  "description": "Local shim that maps Vitest APIs to Jest so tests can run without external downloads.",
+  "main": "index.js",
+  "types": "index.d.ts",
+  "typesVersions": {
+    "*": {
+      "globals": ["./globals.d.ts"]
+    }
+  },
+  "bin": {
+    "vitest": "bin/vitest.js"
+  }
+}
