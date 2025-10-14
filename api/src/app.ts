@@ -9,6 +9,7 @@ import betsRouter from './routes/bets';
 import resultsRouter from './routes/results';
 import settlementsRouter from './routes/settlements';
 import statsRouter from './routes/stats';
+import achievementsRouter from './routes/achievements';
 import { env } from './config/env';
 
 const limiter = rateLimit({
@@ -43,5 +44,6 @@ app.use('/bets', betsRouter);
 app.use('/results', resultsRouter);
 app.use('/settlements', settlementsRouter);
 app.use('/stats', statsRouter);
+app.use('/achievements', achievementsRouter);
 
 export { app };

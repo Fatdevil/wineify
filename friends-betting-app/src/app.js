@@ -5,7 +5,9 @@ import {
   getSettlements,
   markSettlementReceived,
   getLeaderboard,
-  getProfileStats
+  getProfileStats,
+  getAchievements,
+  getMyAchievements
 } from './api.js';
 import {
   formatDateTime,
@@ -18,6 +20,7 @@ import {
 } from './helpers.js';
 import { renderLeaderboard } from './Leaderboard.js';
 import { createProfileStatsCard } from './ProfileStats.js';
+import { renderAchievementsView } from './AchievementsView.js';
 
 const state = {
   events: [],
@@ -26,6 +29,10 @@ const state = {
   results: null,
   leaderboard: [],
   profileStats: null,
+  achievements: {
+    catalog: [],
+    mine: []
+  },
   selectedEventId: null,
   status: {
     events: 'idle',
@@ -33,7 +40,8 @@ const state = {
     settlements: 'idle',
     results: 'idle',
     leaderboard: 'idle',
-    profile: 'idle'
+    profile: 'idle',
+    achievements: 'idle'
   },
   errors: {
     events: null,
@@ -41,7 +49,8 @@ const state = {
     settlements: null,
     results: null,
     leaderboard: null,
-    profile: null
+    profile: null,
+    achievements: null
   },
   ui: {
     activeSection: 'events',
@@ -50,7 +59,8 @@ const state = {
   },
   meta: {
     currentUserId: null,
-    lastProfileXp: 0
+    lastProfileXp: 0,
+    lastProfileLevel: 1
   }
 };
 
@@ -60,6 +70,7 @@ const navItems = [
   { id: 'results', label: 'Results' },
   { id: 'settlements', label: 'Settlements' },
   { id: 'leaderboard', label: 'Leaderboard' },
+  { id: 'achievements', label: 'Achievements' },
   { id: 'profile', label: 'My Profile' }
 ];
 
@@ -151,6 +162,7 @@ function createMain() {
   sectionRefs.set('results', createSection('results'));
   sectionRefs.set('settlements', createSection('settlements'));
   sectionRefs.set('leaderboard', createSection('leaderboard'));
+  sectionRefs.set('achievements', createSection('achievements'));
   sectionRefs.set('profile', createSection('profile'));
 
   sectionRefs.forEach(({ section }) => {
@@ -252,6 +264,8 @@ async function loadProfileStats({ showLoading = true } = {}) {
     state.profileStats = null;
     updateStatus('profile', 'idle');
     renderProfile();
+    state.achievements.mine = [];
+    void loadAchievements({ showLoading: false });
     return;
   }
 
@@ -262,16 +276,43 @@ async function loadProfileStats({ showLoading = true } = {}) {
 
   try {
     const stats = await getProfileStats(userId);
-    const previousXp = state.profileStats?.xp ?? 0;
+    const previousLevel = state.meta.lastProfileLevel ?? 1;
     state.profileStats = stats;
-    state.ui.profileLevelUp = (stats?.xp ?? 0) > previousXp;
+    state.ui.profileLevelUp = (stats?.level ?? 1) > previousLevel;
     state.meta.lastProfileXp = stats?.xp ?? 0;
+    state.meta.lastProfileLevel = stats?.level ?? previousLevel;
     updateStatus('profile', 'success');
   } catch (error) {
     updateStatus('profile', 'error', error);
   }
 
   renderProfile();
+
+  if (state.status.profile === 'success') {
+    void loadAchievements({ showLoading: false });
+  }
+}
+
+async function loadAchievements({ showLoading = true } = {}) {
+  if (showLoading) {
+    updateStatus('achievements', 'loading');
+    renderAchievementsSection();
+  }
+
+  try {
+    const [catalog, mine] = await Promise.all([
+      getAchievements(),
+      state.meta.currentUserId ? getMyAchievements(state.meta.currentUserId) : Promise.resolve([])
+    ]);
+
+    state.achievements.catalog = Array.isArray(catalog) ? catalog : [];
+    state.achievements.mine = Array.isArray(mine) ? mine : [];
+    updateStatus('achievements', 'success');
+  } catch (error) {
+    updateStatus('achievements', 'error', error);
+  }
+
+  renderAchievementsSection();
 }
 
 function updateStatus(section, status, error = null) {
@@ -474,6 +515,46 @@ function renderLeaderboardSection() {
   renderLeaderboard(body, state.leaderboard);
 }
 
+function renderAchievementsSection() {
+  const refs = sectionRefs.get('achievements');
+  if (!refs) {
+    return;
+  }
+
+  const { body } = refs;
+  clearChildren(body);
+
+  const status = state.status.achievements;
+
+  if (status === 'loading') {
+    body.append(createParagraph('Loading achievements…'));
+    return;
+  }
+
+  if (status === 'error') {
+    body.append(createParagraph('Unable to load achievements right now.', 'error'));
+    return;
+  }
+
+  if (!state.achievements.catalog.length) {
+    body.append(createParagraph('Achievements are coming soon. Check back later!'));
+    return;
+  }
+
+  const gridContainer = document.createElement('div');
+
+  if (!state.meta.currentUserId) {
+    body.append(createParagraph('Sign in to start unlocking achievements.'));
+  }
+
+  renderAchievementsView(gridContainer, {
+    all: state.achievements.catalog,
+    earned: state.achievements.mine,
+  });
+
+  body.append(gridContainer);
+}
+
 function renderProfile() {
   const refs = sectionRefs.get('profile');
   if (!refs) {
@@ -504,14 +585,8 @@ function renderProfile() {
     return;
   }
 
-  const card = createProfileStatsCard(state.profileStats);
-  if (state.ui.profileLevelUp) {
-    card.classList.add('profile-stats--level-up');
-    window.setTimeout(() => {
-      card.classList.remove('profile-stats--level-up');
-    }, 900);
-    state.ui.profileLevelUp = false;
-  }
+  const card = createProfileStatsCard(state.profileStats, { highlightLevelUp: state.ui.profileLevelUp });
+  state.ui.profileLevelUp = false;
 
   body.append(card);
 }

@@ -404,8 +404,23 @@ a {
 }
 
 .xp-progress__label {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
   font-size: 0.85rem;
   font-weight: 600;
+}
+
+.xp-progress__level {
+  font-size: 1rem;
+}
+
+.xp-progress__meter {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #94a3b8;
 }
 
 .xp-progress__track {
@@ -424,9 +439,9 @@ a {
 }
 
 .xp-progress__value {
-  align-self: flex-end;
+  align-self: flex-start;
   font-size: 0.75rem;
-  color: #94a3b8;
+  color: #cbd5f5;
 }
 
 @keyframes levelPulse {
@@ -434,15 +449,75 @@ a {
     box-shadow: 0 0 0 rgba(99, 102, 241, 0.4);
   }
   50% {
-    box-shadow: 0 0 32px rgba(99, 102, 241, 0.5);
+    box-shadow: 0 0 18px rgba(129, 140, 248, 0.55);
   }
   100% {
     box-shadow: 0 0 0 rgba(99, 102, 241, 0.4);
   }
 }
 
-.profile-stats--level-up {
-  animation: levelPulse 0.8s ease;
+.xp-progress--level-up .xp-progress__fill {
+  animation: levelPulse 0.9s ease;
+}
+
+.achievement-grid {
+  display: grid;
+  gap: 16px;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+}
+
+.achievement-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  transition: transform 0.2s ease, box-shadow 0.2s ease, opacity 0.2s ease;
+}
+
+.achievement-card:not(.achievement-card--locked):hover {
+  transform: translateY(-2px);
+  box-shadow: 0 22px 35px rgba(17, 24, 39, 0.45);
+}
+
+.achievement-card__title {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.achievement-card__description {
+  margin: 0;
+  font-size: 0.85rem;
+  color: #cbd5f5;
+  line-height: 1.4;
+}
+
+.achievement-card__footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  font-size: 0.75rem;
+  color: #94a3b8;
+}
+
+.achievement-card__reward {
+  color: #facc15;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.achievement-card__meta {
+  font-size: 0.72rem;
+}
+
+.achievement-card--locked {
+  opacity: 0.45;
+  filter: grayscale(0.35);
+}
+
+.achievement-card--locked .achievement-card__reward {
+  color: #64748b;
 }
 
 @media (max-width: 640px) {

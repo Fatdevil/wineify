@@ -22,7 +22,15 @@ A lightweight dashboard that visualises friends betting activity against the Win
 
 1. Run `npm run dev`.
 2. Open [http://localhost:5173](http://localhost:5173) in your browser.
-3. Capture the full dashboard showing the Event List, My Bets, Results summary, Settlements cards, Leaderboard and Profile panels so the new XP indicators are visible.
+3. Capture the full dashboard showing the Event List, My Bets, Results summary, Settlements cards, Leaderboard, Achievements grid and Profile panels so the new XP indicators are visible.
+
+## Achievements
+
+- A dedicated **Achievements** section highlights every badge available in the Wineify ecosystem alongside XP rewards.
+- Unlocked achievements glow at full opacity and surface the unlock date so it is easy to share milestones.
+- Locked entries remain visible (dimmed) to tease the next targets for returning players.
+- Profile stats now show the current level, total XP and the next level target using the new progression formula.
+- To capture updated visuals, follow the screenshot steps above and include the Achievements grid and Profile panels in the frame.
 
 ## API expectations
 
@@ -38,6 +46,7 @@ friends-betting-app/
 ├── src/
 │   ├── api.js           # Fetch helpers for the Wineify API
 │   ├── app.js           # Dashboard logic & rendering
+│   ├── AchievementsView.js # Renders the achievements grid & locked states
 │   ├── helpers.js       # Formatting utilities (unit tested)
 │   ├── Leaderboard.js   # Leaderboard renderer & XP bars
 │   ├── ProfileStats.js  # Profile summary with streak and XP progress
