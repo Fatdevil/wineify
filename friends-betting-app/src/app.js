@@ -3,7 +3,9 @@ import {
   getMyBets,
   getResults,
   getSettlements,
-  markSettlementReceived
+  markSettlementReceived,
+  getLeaderboard,
+  getProfileStats
 } from './api.js';
 import {
   formatDateTime,
@@ -14,28 +16,41 @@ import {
   clearChildren,
   createParagraph
 } from './helpers.js';
+import { renderLeaderboard } from './Leaderboard.js';
+import { createProfileStatsCard } from './ProfileStats.js';
 
 const state = {
   events: [],
   bets: [],
   settlements: [],
   results: null,
+  leaderboard: [],
+  profileStats: null,
   selectedEventId: null,
   status: {
     events: 'idle',
     bets: 'idle',
     settlements: 'idle',
-    results: 'idle'
+    results: 'idle',
+    leaderboard: 'idle',
+    profile: 'idle'
   },
   errors: {
     events: null,
     bets: null,
     settlements: null,
-    results: null
+    results: null,
+    leaderboard: null,
+    profile: null
   },
   ui: {
     activeSection: 'events',
-    markingSettlementId: null
+    markingSettlementId: null,
+    profileLevelUp: false
+  },
+  meta: {
+    currentUserId: null,
+    lastProfileXp: 0
   }
 };
 
@@ -43,11 +58,21 @@ const navItems = [
   { id: 'events', label: 'Events' },
   { id: 'bets', label: 'My Bets' },
   { id: 'results', label: 'Results' },
-  { id: 'settlements', label: 'Settlements' }
+  { id: 'settlements', label: 'Settlements' },
+  { id: 'leaderboard', label: 'Leaderboard' },
+  { id: 'profile', label: 'My Profile' }
 ];
 
 const sectionRefs = new Map();
 const navRefs = new Map();
+
+function getCurrentUserId() {
+  if (typeof window === 'undefined' || !window.localStorage) {
+    return null;
+  }
+
+  return window.localStorage.getItem('userId');
+}
 
 const eventStatusStyles = {
   open: { label: 'Open', appearance: 'info' },
@@ -64,6 +89,7 @@ const betStatusStyles = {
 
 const settlementStatusStyles = {
   pending: { label: 'Pending', appearance: 'warning' },
+  completed: { label: 'Received', appearance: 'success' },
   received: { label: 'Received', appearance: 'success' }
 };
 
@@ -72,6 +98,8 @@ function init() {
   if (!app) {
     return;
   }
+
+  state.meta.currentUserId = getCurrentUserId();
 
   app.className = 'dashboard';
   app.append(createHeader(), createNav(), createMain());
@@ -122,6 +150,8 @@ function createMain() {
   sectionRefs.set('bets', createSection('bets'));
   sectionRefs.set('results', createSection('results'));
   sectionRefs.set('settlements', createSection('settlements'));
+  sectionRefs.set('leaderboard', createSection('leaderboard'));
+  sectionRefs.set('profile', createSection('profile'));
 
   sectionRefs.forEach(({ section }) => {
     main.append(section);
@@ -155,7 +185,8 @@ function setActiveSection(id) {
 }
 
 async function loadInitialData() {
-  await Promise.all([loadEvents(), loadBets(), loadSettlements()]);
+  await Promise.all([loadEvents(), loadBets(), loadSettlements(), loadLeaderboard()]);
+  await loadProfileStats({ showLoading: false });
 }
 
 async function loadEvents() {
@@ -198,6 +229,49 @@ async function loadSettlements() {
   }
 
   renderSettlements();
+}
+
+async function loadLeaderboard() {
+  updateStatus('leaderboard', 'loading');
+  renderLeaderboardSection();
+
+  try {
+    state.leaderboard = await getLeaderboard();
+    updateStatus('leaderboard', 'success');
+  } catch (error) {
+    updateStatus('leaderboard', 'error', error);
+  }
+
+  renderLeaderboardSection();
+}
+
+async function loadProfileStats({ showLoading = true } = {}) {
+  const userId = state.meta.currentUserId;
+
+  if (!userId) {
+    state.profileStats = null;
+    updateStatus('profile', 'idle');
+    renderProfile();
+    return;
+  }
+
+  if (showLoading) {
+    updateStatus('profile', 'loading');
+    renderProfile();
+  }
+
+  try {
+    const stats = await getProfileStats(userId);
+    const previousXp = state.profileStats?.xp ?? 0;
+    state.profileStats = stats;
+    state.ui.profileLevelUp = (stats?.xp ?? 0) > previousXp;
+    state.meta.lastProfileXp = stats?.xp ?? 0;
+    updateStatus('profile', 'success');
+  } catch (error) {
+    updateStatus('profile', 'error', error);
+  }
+
+  renderProfile();
 }
 
 function updateStatus(section, status, error = null) {
@@ -377,6 +451,71 @@ function renderSettlements() {
   });
 }
 
+function renderLeaderboardSection() {
+  const refs = sectionRefs.get('leaderboard');
+  if (!refs) {
+    return;
+  }
+
+  const { body } = refs;
+  clearChildren(body);
+
+  const status = state.status.leaderboard;
+  if (status === 'loading') {
+    body.append(createParagraph('Loading leaderboard…'));
+    return;
+  }
+
+  if (status === 'error') {
+    body.append(createParagraph('Unable to load the leaderboard. Please try again later.', 'error'));
+    return;
+  }
+
+  renderLeaderboard(body, state.leaderboard);
+}
+
+function renderProfile() {
+  const refs = sectionRefs.get('profile');
+  if (!refs) {
+    return;
+  }
+
+  const { body } = refs;
+  clearChildren(body);
+
+  if (!state.meta.currentUserId) {
+    body.append(createParagraph('Log in to track your personal stats and XP.'));
+    return;
+  }
+
+  const status = state.status.profile;
+  if (status === 'loading') {
+    body.append(createParagraph('Loading your stats…'));
+    return;
+  }
+
+  if (status === 'error') {
+    body.append(createParagraph('Unable to load your stats right now.', 'error'));
+    return;
+  }
+
+  if (!state.profileStats) {
+    body.append(createParagraph('Complete a settlement to start earning XP.'));
+    return;
+  }
+
+  const card = createProfileStatsCard(state.profileStats);
+  if (state.ui.profileLevelUp) {
+    card.classList.add('profile-stats--level-up');
+    window.setTimeout(() => {
+      card.classList.remove('profile-stats--level-up');
+    }, 900);
+    state.ui.profileLevelUp = false;
+  }
+
+  body.append(card);
+}
+
 function createSettlementCard(settlement) {
   const card = document.createElement('article');
   card.className = 'card';
@@ -393,7 +532,8 @@ function createSettlementCard(settlement) {
     info.append(due);
   }
 
-  const statusInfo = settlementStatusStyles[settlement.status] ?? {
+  const statusKey = typeof settlement.status === 'string' ? settlement.status.toLowerCase() : settlement.status;
+  const statusInfo = settlementStatusStyles[statusKey] ?? {
     label: settlement.status,
     appearance: 'muted'
   };
@@ -426,10 +566,31 @@ async function handleMarkSettlement(id) {
   renderSettlements();
 
   try {
-    await markSettlementReceived(id);
-    state.settlements = state.settlements.map((settlement) =>
-      settlement.id === id ? { ...settlement, status: 'received' } : settlement
-    );
+    const response = await markSettlementReceived(id);
+    state.settlements = state.settlements.map((settlement) => {
+      if (settlement.id !== id) {
+        return settlement;
+      }
+
+      const statusValue = response?.settlement?.status ?? 'completed';
+      return { ...settlement, status: statusValue.toLowerCase?.() ?? statusValue };
+    });
+
+    if (response?.stats) {
+      const stats = response.stats;
+      if (stats.userId === state.meta.currentUserId) {
+        const previousXp = state.profileStats?.xp ?? 0;
+        state.profileStats = stats;
+        state.ui.profileLevelUp = (stats.xp ?? 0) > previousXp;
+        state.meta.lastProfileXp = stats.xp ?? 0;
+        updateStatus('profile', 'success');
+        renderProfile();
+      }
+    } else if (state.meta.currentUserId) {
+      await loadProfileStats({ showLoading: false });
+    }
+
+    await loadLeaderboard();
   } catch (error) {
     window.alert('Unable to mark settlement as received. Please try again.');
     console.error(error);

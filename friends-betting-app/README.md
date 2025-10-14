@@ -22,7 +22,7 @@ A lightweight dashboard that visualises friends betting activity against the Win
 
 1. Run `npm run dev`.
 2. Open [http://localhost:5173](http://localhost:5173) in your browser.
-3. Capture the full dashboard showing the Event List, My Bets, Results summary and Settlements cards.
+3. Capture the full dashboard showing the Event List, My Bets, Results summary, Settlements cards, Leaderboard and Profile panels so the new XP indicators are visible.
 
 ## API expectations
 
@@ -39,6 +39,8 @@ friends-betting-app/
 │   ├── api.js           # Fetch helpers for the Wineify API
 │   ├── app.js           # Dashboard logic & rendering
 │   ├── helpers.js       # Formatting utilities (unit tested)
+│   ├── Leaderboard.js   # Leaderboard renderer & XP bars
+│   ├── ProfileStats.js  # Profile summary with streak and XP progress
 │   └── styles.css       # Tailored styling (dark mode)
 └── tests/
     └── helpers.test.mjs # Node test exercising formatting helpers

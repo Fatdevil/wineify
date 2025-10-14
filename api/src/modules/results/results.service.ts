@@ -91,15 +91,15 @@ export async function recordResult(
           where: { betId: payout.betId },
           update: {
             resultId: computationResult.resultId,
-            status: SettlementStatus.COMPLETED,
-            settledAt: new Date(),
+            status: SettlementStatus.PENDING,
+            settledAt: null,
             payout: payoutDecimal,
           },
           create: {
             betId: payout.betId,
             resultId: computationResult.resultId,
-            status: SettlementStatus.COMPLETED,
-            settledAt: new Date(),
+            status: SettlementStatus.PENDING,
+            settledAt: null,
             payout: payoutDecimal,
           },
         });

@@ -1,6 +1,8 @@
 import { Router } from 'express';
+import { SettlementStatus } from '@prisma/client';
 import { prisma } from '../lib/prisma';
 import { generateSettlements } from '../modules/settlements/settlements.service';
+import { getUserStats, updateStatsForSettlement } from '../services/stats.service';
 
 const router = Router();
 
@@ -25,6 +27,52 @@ router.get('/', async (_req, res) => {
     ok: true,
     settlements,
   });
+});
+
+router.post('/:id/mark-received', async (req, res) => {
+  const { id } = req.params;
+
+  if (!id) {
+    return res.status(400).json({ ok: false, message: 'Missing settlement identifier.' });
+  }
+
+  try {
+    const { settlement, stats } = await prisma.$transaction(async (tx) => {
+      const existing = await tx.settlement.findUnique({ where: { id } });
+
+      if (!existing) {
+        throw new Error('Settlement not found.');
+      }
+
+      const updatedSettlement = await tx.settlement.update({
+        where: { id },
+        data: {
+          status: SettlementStatus.COMPLETED,
+          settledAt: new Date(),
+        },
+      });
+
+      const updatedStats = await updateStatsForSettlement(id, tx);
+
+      return { settlement: updatedSettlement, stats: updatedStats };
+    });
+
+    const profile = await getUserStats(stats.userId);
+
+    return res.status(200).json({
+      ok: true,
+      settlement,
+      stats: profile,
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Unable to update settlement.';
+    const statusCode = message === 'Settlement not found.' ? 404 : 500;
+
+    return res.status(statusCode).json({
+      ok: false,
+      message,
+    });
+  }
 });
 
 router.get('/events/:eventId', async (req, res) => {

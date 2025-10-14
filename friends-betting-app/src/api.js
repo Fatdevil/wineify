@@ -56,7 +56,7 @@ export async function getSettlements() {
 }
 
 export async function markSettlementReceived(id) {
-  await fetchJson(`/settlements/${id}/mark-received`, {
+  return fetchJson(`/settlements/${id}/mark-received`, {
     method: 'POST'
   });
 }
@@ -67,4 +67,18 @@ export async function getResults(eventId) {
   }
 
   return fetchJson(`/results/${eventId}`);
+}
+
+export async function getLeaderboard() {
+  const data = await fetchJson('/stats/leaderboard');
+  return Array.isArray(data?.leaderboard) ? data.leaderboard : [];
+}
+
+export async function getProfileStats(userId) {
+  if (!userId) {
+    throw new Error('Missing user identifier');
+  }
+
+  const data = await fetchJson(`/stats/${userId}`);
+  return data?.stats ?? null;
 }
