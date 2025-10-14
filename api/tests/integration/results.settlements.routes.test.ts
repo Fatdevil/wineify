@@ -1,11 +1,13 @@
+import { beforeAll, describe, expect, it, vi } from 'vitest';
 import request from 'supertest';
 import { Prisma, BetStatus, SubCompStatus } from '@prisma/client';
 import { createMockPrisma } from '../utils/mockPrisma';
 
-const { prisma, db } = createMockPrisma();
+const mockPrisma = createMockPrisma();
+const { db } = mockPrisma;
 
-jest.mock('../../src/lib/prisma', () => ({
-  prisma,
+vi.mock('../../src/lib/prisma', () => ({
+  prisma: mockPrisma.prisma,
 }));
 
 let app: import('express').Express;

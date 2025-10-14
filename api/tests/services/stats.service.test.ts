@@ -1,3 +1,4 @@
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { Prisma, BetStatus, SettlementStatus } from '@prisma/client';
 import {
   calculateXpGain,
@@ -5,15 +6,12 @@ import {
   getUserStats,
   updateStatsForSettlement,
 } from '../../src/services/stats.service';
+import { createMockPrisma } from '../utils/mockPrisma';
 
-jest.mock('../../src/lib/prisma', () => {
-  const { createMockPrisma } = require('../utils/mockPrisma');
-  return createMockPrisma();
-});
+const mockPrisma = createMockPrisma();
+const { prisma, db } = mockPrisma;
 
-const { prisma, db } = jest.requireMock('../../src/lib/prisma') as ReturnType<
-  typeof import('../utils/mockPrisma')['createMockPrisma']
->;
+vi.mock('../../src/lib/prisma', () => mockPrisma);
 
 describe('stats.service', () => {
   beforeEach(() => {

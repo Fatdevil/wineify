@@ -1,15 +1,13 @@
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { BetStatus, Prisma, SettlementStatus } from '@prisma/client';
 import { checkAndGrantAchievements } from '../../src/services/achievements.service';
 import { getLevelProgress } from '../../src/services/progression.service';
+import { createMockPrisma } from '../utils/mockPrisma';
 
-jest.mock('../../src/lib/prisma', () => {
-  const { createMockPrisma } = require('../utils/mockPrisma');
-  return createMockPrisma();
-});
+const mockPrisma = createMockPrisma();
+const { prisma, db } = mockPrisma;
 
-const { prisma, db } = jest.requireMock('../../src/lib/prisma') as ReturnType<
-  typeof import('../utils/mockPrisma')['createMockPrisma']
->;
+vi.mock('../../src/lib/prisma', () => mockPrisma);
 
 const ACHIEVEMENT_SEED = [
   { code: 'FIRST_WIN', title: 'First Win', xpReward: 50 },
