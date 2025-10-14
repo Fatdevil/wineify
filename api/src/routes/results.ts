@@ -1,9 +1,13 @@
 import { Router } from 'express';
+import { Role } from '@prisma/client';
 import { prisma } from '../lib/prisma';
 import { recordResult } from '../modules/results/results.service';
 import { computePayouts } from '../modules/results/payouts.service';
+import { requireAuth, requireRole } from '../middleware/requireAuth';
 
 const router = Router();
+
+router.use(requireAuth);
 
 router.get('/', async (_req, res) => {
   const results = await prisma.result.findMany({
@@ -58,7 +62,7 @@ router.get('/:id', async (req, res) => {
   });
 });
 
-router.post('/', async (req, res) => {
+router.post('/', requireRole(Role.ADMIN), async (req, res) => {
   const { subCompetitionId, winningEntryId } = req.body ?? {};
 
   if (!subCompetitionId || !winningEntryId) {

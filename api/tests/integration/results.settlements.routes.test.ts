@@ -1,6 +1,6 @@
-import { beforeAll, describe, expect, it, vi } from 'vitest';
+import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import request from 'supertest';
-import { Prisma, BetStatus, SubCompStatus } from '@prisma/client';
+import { Prisma, BetStatus, SubCompStatus, Role } from '@prisma/client';
 import { createMockPrisma } from '../utils/mockPrisma';
 
 const mockPrisma = createMockPrisma();
@@ -11,11 +11,21 @@ vi.mock('../../src/lib/prisma', () => ({
 }));
 
 let app: import('express').Express;
+let adminToken: string;
+let userToken: string;
+let signAccessToken: typeof import('../../src/services/auth.service')['signAccessToken'];
 
-beforeAll(async () => {
-  const module = await import('../../src/app');
-  app = module.app;
+const resetDb = () => {
+  db.users.length = 0;
+  db.events.length = 0;
+  db.subCompetitions.length = 0;
+  db.participants.length = 0;
+  db.bets.length = 0;
+  db.results.length = 0;
+  db.settlements.length = 0;
+};
 
+const seedBaseData = () => {
   db.events.push({ id: 'event-1', name: 'Championship', houseCut: 0.05 });
   db.subCompetitions.push({ id: 'sub-1', eventId: 'event-1', status: SubCompStatus.ACTIVE, name: 'Qualifier' });
   db.participants.push(
@@ -52,12 +62,27 @@ beforeAll(async () => {
       resultId: null,
     } as any,
   );
+};
+
+beforeAll(async () => {
+  const module = await import('../../src/app');
+  app = module.app;
+  ({ signAccessToken } = await import('../../src/services/auth.service'));
+
+  adminToken = signAccessToken({ sub: 'admin-1', role: Role.ADMIN });
+  userToken = signAccessToken({ sub: 'user-1', role: Role.USER });
+});
+
+beforeEach(() => {
+  resetDb();
+  seedBaseData();
 });
 
 describe('Results and Settlements routes', () => {
   it('records a result and returns payouts + settlements', async () => {
     const response = await request(app)
       .post('/results')
+      .set('Authorization', `Bearer ${adminToken}`)
       .send({ subCompetitionId: 'sub-1', winningEntryId: 'participant-1' })
       .expect(201);
 
@@ -76,17 +101,36 @@ describe('Results and Settlements routes', () => {
   });
 
   it('retrieves the recorded result with payout summary', async () => {
-    const [result] = db.results;
-    const response = await request(app).get(`/results/${result.id}`).expect(200);
+    const recordResponse = await request(app)
+      .post('/results')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ subCompetitionId: 'sub-1', winningEntryId: 'participant-1' })
+      .expect(201);
+
+    const { resultId } = recordResponse.body.data;
+
+    const response = await request(app)
+      .get(`/results/${resultId}`)
+      .set('Authorization', `Bearer ${userToken}`)
+      .expect(200);
 
     expect(response.body.ok).toBe(true);
-    expect(response.body.data.result.id).toBe(result.id);
+    expect(response.body.data.result.id).toBe(resultId);
     expect(response.body.data.payouts.totalPool).toBeCloseTo(200);
     expect(response.body.data.payouts.payouts).toHaveLength(3);
   });
 
   it('aggregates settlements by event', async () => {
-    const response = await request(app).get('/settlements/events/event-1').expect(200);
+    await request(app)
+      .post('/results')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ subCompetitionId: 'sub-1', winningEntryId: 'participant-1' })
+      .expect(201);
+
+    const response = await request(app)
+      .get('/settlements/events/event-1')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .expect(200);
 
     expect(response.body.ok).toBe(true);
     expect(response.body.data.eventId).toBe('event-1');

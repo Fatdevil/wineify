@@ -42,16 +42,30 @@ enum SettlementStatus {
 }
 
 model User {
-  id        String   @id @default(cuid())
-  email     String   @unique
-  password  String?
-  role      Role     @default(USER)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id           String    @id @default(cuid())
+  email        String    @unique
+  passwordHash String
+  role         Role      @default(USER)
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
 
-  bets Bet[]
-  stats Stats?
+  bets       Bet[]
+  stats      Stats?
   achievements UserAchievement[]
+  sessions   Session[]
+}
+
+model Session {
+  id          String   @id @default(cuid())
+  userId      String
+  refreshHash String
+  userAgent   String?
+  ip          String?
+  createdAt   DateTime @default(now())
+  revokedAt   DateTime?
+  user        User     @relation(fields: [userId], references: [id])
+
+  @@index([userId])
 }
 
 model Event {

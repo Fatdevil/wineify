@@ -1,10 +1,13 @@
 import { Router } from 'express';
-import { SettlementStatus } from '@prisma/client';
+import { Role, SettlementStatus } from '@prisma/client';
 import { prisma } from '../lib/prisma';
 import { generateSettlements } from '../modules/settlements/settlements.service';
 import { getUserStats, updateStatsForSettlement } from '../services/stats.service';
+import { requireAuth, requireRole } from '../middleware/requireAuth';
 
 const router = Router();
+
+router.use(requireAuth);
 
 router.get('/', async (_req, res) => {
   const settlements = await prisma.settlement.findMany({
@@ -29,7 +32,7 @@ router.get('/', async (_req, res) => {
   });
 });
 
-router.post('/:id/mark-received', async (req, res) => {
+router.post('/:id/mark-received', requireRole(Role.ADMIN), async (req, res) => {
   const { id } = req.params;
 
   if (!id) {
@@ -75,7 +78,7 @@ router.post('/:id/mark-received', async (req, res) => {
   }
 });
 
-router.get('/events/:eventId', async (req, res) => {
+router.get('/events/:eventId', requireRole(Role.ADMIN), async (req, res) => {
   const { eventId } = req.params;
 
   try {
