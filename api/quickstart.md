@@ -11,7 +11,8 @@ npx prisma migrate dev --name add_achievements
 
 - `GET /api/stats/leaderboard` — returns the top 20 users ordered by XP.
 - `GET /api/stats/:userId` — returns the aggregated statistics for a specific user.
-- `POST /api/settlements/:id/mark-received` — finalises a settlement, updates XP/record streaks and responds with the refreshed user snapshot.
+- `POST /api/settlements/:id/mark-received` — finalises a settlement, updates XP/record streaks and responds with the refreshed
+user snapshot.
 
 XP progression uses the formula `xp += 10 * sqrt(payoutUnits)`.
 
@@ -28,3 +29,8 @@ npm run dev
 ```
 
 The server listens on `http://localhost:3000/api`.
+
+## CI & Lockfile
+
+- Run `npm install` from the `/api` directory and commit the resulting `package-lock.json` with your changes.
+- Continuous integration installs dependencies with `npm ci` to guarantee reproducible environments before generating Prisma assets and running the test suite.

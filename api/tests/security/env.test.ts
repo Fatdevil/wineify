@@ -1,9 +1,11 @@
+import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
+
 describe('environment hardening', () => {
   const ORIGINAL_ENV = { ...process.env };
 
   beforeEach(() => {
     process.env = { ...ORIGINAL_ENV };
-    jest.resetModules();
+    vi.resetModules();
   });
 
   afterAll(() => {
