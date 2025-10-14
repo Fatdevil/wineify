@@ -25,6 +25,8 @@ describe('stats.service', () => {
     db.results.length = 0;
     db.settlements.length = 0;
     db.stats.length = 0;
+    db.achievements.length = 0;
+    db.userAchievements.length = 0;
   });
 
   it('calculates XP gain using square root progression', () => {
@@ -64,6 +66,7 @@ describe('stats.service', () => {
     expect(winStats.streak).toBe(1);
     expect(winStats.totalUnits).toBe(Math.round(150 - 50));
     expect(winStats.xp).toBe(calculateXpGain(150));
+    expect(winStats.level).toBeGreaterThan(1);
 
     db.bets.push({
       id: 'bet-2',
@@ -93,6 +96,7 @@ describe('stats.service', () => {
     expect(lossStats.streak).toBe(0);
     expect(lossStats.totalUnits).toBe(Math.round(150 - 50) - Math.round(30));
     expect(lossStats.xp).toBe(calculateXpGain(150));
+    expect(lossStats.level).toBe(winStats.level);
   });
 
   it('returns leaderboard ordered by XP and exposes user summaries', async () => {
@@ -111,6 +115,8 @@ describe('stats.service', () => {
         totalUnits: 120,
         streak: 2,
         xp: 180,
+        level: 2,
+        nextLevelXp: 210,
         lastUpdated: new Date(),
       },
       {
@@ -121,6 +127,8 @@ describe('stats.service', () => {
         totalUnits: 200,
         streak: 4,
         xp: 220,
+        level: 3,
+        nextLevelXp: 331,
         lastUpdated: new Date(),
       },
       {
@@ -131,6 +139,8 @@ describe('stats.service', () => {
         totalUnits: 90,
         streak: 1,
         xp: 190,
+        level: 3,
+        nextLevelXp: 331,
         lastUpdated: new Date(),
       },
     );
@@ -139,6 +149,8 @@ describe('stats.service', () => {
 
     expect(leaderboard.map((entry) => entry.userId)).toEqual(['user-2', 'user-3', 'user-1']);
     expect(leaderboard[0]?.username).toBe('bravo@example.com');
+    expect(leaderboard[0]?.level).toBe(3);
+    expect(leaderboard[0]?.xpIntoLevel).toBeGreaterThanOrEqual(0);
   });
 
   it('creates default stats when requesting a user snapshot', async () => {

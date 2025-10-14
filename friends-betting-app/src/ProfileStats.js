@@ -1,7 +1,5 @@
 import { formatNumber } from './helpers.js';
 
-const XP_PER_LEVEL = 100;
-
 function createStatChip(label, value) {
   const chip = document.createElement('div');
   chip.className = 'profile-stats__chip';
@@ -9,17 +7,23 @@ function createStatChip(label, value) {
   return chip;
 }
 
-function createXpProgress(stats) {
+function createXpProgress(stats, { highlightLevelUp = false } = {}) {
   const wrapper = document.createElement('div');
   wrapper.className = 'xp-progress';
+  if (highlightLevelUp) {
+    wrapper.classList.add('xp-progress--level-up');
+  }
 
-  const level = Math.floor(stats.xp / XP_PER_LEVEL) + 1;
-  const currentProgress = stats.xp % XP_PER_LEVEL;
-  const progressPercent = Math.min(100, Math.round((currentProgress / XP_PER_LEVEL) * 100));
+  const xpIntoLevel = Math.max(0, stats.xpIntoLevel ?? 0);
+  const xpForNextLevel = Math.max(1, stats.xpForNextLevel ?? 1);
+  const progressPercent = Math.min(100, Math.round((xpIntoLevel / xpForNextLevel) * 100));
 
   const label = document.createElement('div');
   label.className = 'xp-progress__label';
-  label.textContent = `Level ${level}`;
+  label.innerHTML = `
+    <span class="xp-progress__level">Level ${stats.level ?? 1}</span>
+    <span class="xp-progress__meter">${xpIntoLevel}/${xpForNextLevel} XP</span>
+  `;
 
   const track = document.createElement('div');
   track.className = 'xp-progress__track';
@@ -30,7 +34,8 @@ function createXpProgress(stats) {
 
   const marker = document.createElement('span');
   marker.className = 'xp-progress__value';
-  marker.textContent = `${stats.xp} XP`;
+  const nextLevelTarget = stats.nextLevelXp ?? (stats.xp ?? 0) + xpForNextLevel;
+  marker.textContent = `Next level at ${nextLevelTarget} XP · ${stats.xp} total XP`;
 
   track.append(fill);
   wrapper.append(label, track, marker);
@@ -38,7 +43,7 @@ function createXpProgress(stats) {
   return wrapper;
 }
 
-export function createProfileStatsCard(stats) {
+export function createProfileStatsCard(stats, options = {}) {
   const card = document.createElement('article');
   card.className = 'card profile-stats';
 
@@ -58,10 +63,8 @@ export function createProfileStatsCard(stats) {
   streak.className = 'profile-stats__streak';
   streak.textContent = stats.streak > 0 ? `Streak: ${'🔥'.repeat(Math.min(stats.streak, 5))}${stats.streak > 5 ? '+' : ''}` : 'No active streak';
 
-  const xp = createXpProgress(stats);
+  const xp = createXpProgress(stats, options);
 
   card.append(heading, chips, streak, xp);
   return card;
 }
-
-export { XP_PER_LEVEL };

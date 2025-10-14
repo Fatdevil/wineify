@@ -1,5 +1,7 @@
 import type { Prisma, PrismaClient } from '@prisma/client';
 import { prisma } from '../lib/prisma';
+import { getLevelProgress } from './progression.service';
+import { checkAndGrantAchievements } from './achievements.service';
 
 export interface StatsSnapshot {
   id: string;
@@ -9,6 +11,8 @@ export interface StatsSnapshot {
   totalUnits: number;
   streak: number;
   xp: number;
+  level: number;
+  nextLevelXp: number;
   lastUpdated: Date;
 }
 
@@ -20,6 +24,11 @@ export interface StatsSummary {
   totalUnits: number;
   streak: number;
   xp: number;
+  level: number;
+  nextLevelXp: number;
+  xpIntoLevel: number;
+  xpForNextLevel: number;
+  currentLevelFloorXp: number;
 }
 
 type PrismaClientLike = PrismaClient | Prisma.TransactionClient;
@@ -102,16 +111,30 @@ async function applySettlementStatsUpdate(
   if (payout > 0) {
     const netUnits = Math.round(payout - stake);
     const xpGain = calculateXpGain(payout);
+    const nextXpTotal = stats.xp + xpGain;
+    const progress = getLevelProgress(nextXpTotal);
 
-    return delegate.update({
+    const updated = await delegate.update({
       where: { id: stats.id },
       data: {
         totalWins: stats.totalWins + 1,
         totalUnits: stats.totalUnits + netUnits,
-        xp: stats.xp + xpGain,
+        xp: nextXpTotal,
+        level: progress.level,
+        nextLevelXp: progress.nextLevelTotalXp,
         streak: stats.streak + 1,
       },
     });
+
+    await checkAndGrantAchievements(bet.userId, client);
+
+    const refreshed = await delegate.findUnique({ where: { id: updated.id } });
+
+    if (!refreshed) {
+      throw new Error('Updated stats record could not be loaded.');
+    }
+
+    return refreshed;
   }
 
   const unitsLost = Math.round(stake);
@@ -158,15 +181,23 @@ export async function getLeaderboard(client: PrismaClientLike = prisma): Promise
 
   const usersById = new Map(users.map((user) => [user.id, user]));
 
-  return records.map((record) => ({
-    userId: record.userId,
-    username: usersById.get(record.userId)?.email ?? `User ${record.userId.slice(0, 6)}`,
-    totalWins: record.totalWins,
-    totalLosses: record.totalLosses,
-    totalUnits: record.totalUnits,
-    streak: record.streak,
-    xp: record.xp,
-  }));
+  return records.map((record) => {
+    const progress = getLevelProgress(record.xp);
+    return {
+      userId: record.userId,
+      username: usersById.get(record.userId)?.email ?? `User ${record.userId.slice(0, 6)}`,
+      totalWins: record.totalWins,
+      totalLosses: record.totalLosses,
+      totalUnits: record.totalUnits,
+      streak: record.streak,
+      xp: record.xp,
+      level: record.level ?? progress.level,
+      nextLevelXp: record.nextLevelXp ?? progress.nextLevelTotalXp,
+      xpIntoLevel: progress.xpIntoLevel,
+      xpForNextLevel: progress.xpForNextLevel,
+      currentLevelFloorXp: progress.currentLevelFloorXp,
+    };
+  });
 }
 
 export async function getUserStats(
@@ -185,6 +216,8 @@ export async function getUserStats(
     select: { id: true, email: true },
   });
 
+  const progress = getLevelProgress(stats.xp);
+
   return {
     userId,
     username: user?.email ?? `User ${userId.slice(0, 6)}`,
@@ -193,5 +226,10 @@ export async function getUserStats(
     totalUnits: stats.totalUnits,
     streak: stats.streak,
     xp: stats.xp,
+    level: stats.level ?? progress.level,
+    nextLevelXp: stats.nextLevelXp ?? progress.nextLevelTotalXp,
+    xpIntoLevel: progress.xpIntoLevel,
+    xpForNextLevel: progress.xpForNextLevel,
+    currentLevelFloorXp: progress.currentLevelFloorXp,
   };
 }

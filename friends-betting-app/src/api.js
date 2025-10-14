@@ -82,3 +82,17 @@ export async function getProfileStats(userId) {
   const data = await fetchJson(`/stats/${userId}`);
   return data?.stats ?? null;
 }
+
+export async function getAchievements() {
+  const data = await fetchJson('/achievements');
+  return Array.isArray(data?.achievements) ? data.achievements : [];
+}
+
+export async function getMyAchievements(userId) {
+  if (!userId) {
+    return [];
+  }
+
+  const data = await fetchJson(`/achievements/mine?userId=${encodeURIComponent(userId)}`);
+  return Array.isArray(data?.achievements) ? data.achievements : [];
+}
