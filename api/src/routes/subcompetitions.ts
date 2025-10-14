@@ -1,10 +1,37 @@
 import { Router } from 'express';
 import { prisma } from '../lib/prisma';
+import { requireAuth } from '../middleware/requireAuth';
+import { requireEventRole } from '../services/acl.service';
+import { EventRole } from '@prisma/client';
 
 const router = Router();
 
-router.get('/', async (_req, res) => {
+router.use(requireAuth);
+
+router.get('/', async (req, res) => {
+  const eventId = typeof req.query.eventId === 'string' ? req.query.eventId : null;
+
+  if (eventId) {
+    try {
+      await requireEventRole(eventId, req.user!.id, EventRole.MEMBER);
+    } catch (error) {
+      const status = (error as any)?.statusCode ?? 403;
+      const message = error instanceof Error ? error.message : 'Forbidden.';
+      return res.status(status).json({ ok: false, message });
+    }
+  }
+
   const subCompetitions = await prisma.subCompetition.findMany({
+    where: {
+      event: {
+        ...(eventId ? { id: eventId } : {}),
+        memberships: {
+          some: {
+            userId: req.user!.id,
+          },
+        },
+      },
+    },
     include: {
       event: true,
       participants: true,

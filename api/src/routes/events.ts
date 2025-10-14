@@ -1,10 +1,20 @@
 import { Router } from 'express';
 import { prisma } from '../lib/prisma';
+import { requireAuth } from '../middleware/requireAuth';
 
 const router = Router();
 
-router.get('/', async (_req, res) => {
+router.use(requireAuth);
+
+router.get('/', async (req, res) => {
   const events = await prisma.event.findMany({
+    where: {
+      memberships: {
+        some: {
+          userId: req.user!.id,
+        },
+      },
+    },
     include: {
       subCompetitions: {
         include: {
@@ -12,6 +22,12 @@ router.get('/', async (_req, res) => {
         },
       },
       participants: true,
+      memberships: {
+        select: {
+          userId: true,
+          role: true,
+        },
+      },
     },
     orderBy: {
       startsAt: 'asc',

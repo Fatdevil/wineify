@@ -12,7 +12,12 @@ import {
   registerUser,
   loginUser,
   logoutUser,
-  getCurrentUser
+  getCurrentUser,
+  createEventInvite,
+  joinEventWithInvite,
+  getEventMembers,
+  getNotificationsList,
+  markNotificationAsRead
 } from './api.js';
 import {
   formatDateTime,
@@ -38,6 +43,11 @@ const state = {
     catalog: [],
     mine: []
   },
+  notifications: {
+    items: [],
+    status: 'idle',
+    unread: 0,
+  },
   selectedEventId: null,
   status: {
     events: 'idle',
@@ -46,7 +56,8 @@ const state = {
     results: 'idle',
     leaderboard: 'idle',
     profile: 'idle',
-    achievements: 'idle'
+    achievements: 'idle',
+    notifications: 'idle',
   },
   errors: {
     events: null,
@@ -55,7 +66,8 @@ const state = {
     results: null,
     leaderboard: null,
     profile: null,
-    achievements: null
+    achievements: null,
+    notifications: null,
   },
   ui: {
     activeSection: 'events',
@@ -75,12 +87,27 @@ const state = {
       status: null,
       signIn: null,
       signOut: null
-    }
+    },
+    notifications: {
+      container: null,
+      button: null,
+      badge: null,
+      panel: null,
+      list: null,
+    },
+    events: {
+      joinForm: null,
+      joinInput: null,
+      joinStatus: null,
+      joinFeedback: null,
+      inviteStates: new Map(),
+    },
   },
   meta: {
     currentUserId: null,
     lastProfileXp: 0,
-    lastProfileLevel: 1
+    lastProfileLevel: 1,
+    notificationPollId: null,
   },
   auth: {
     user: null,
@@ -106,7 +133,11 @@ const navRefs = new Map();
 const eventStatusStyles = {
   open: { label: 'Open', appearance: 'info' },
   closed: { label: 'Closed', appearance: 'warning' },
-  settled: { label: 'Settled', appearance: 'accent' }
+  settled: { label: 'Settled', appearance: 'accent' },
+  scheduled: { label: 'Scheduled', appearance: 'info' },
+  active: { label: 'Active', appearance: 'success' },
+  completed: { label: 'Completed', appearance: 'accent' },
+  cancelled: { label: 'Cancelled', appearance: 'muted' },
 };
 
 const betStatusStyles = {
@@ -120,6 +151,15 @@ const settlementStatusStyles = {
   pending: { label: 'Pending', appearance: 'warning' },
   completed: { label: 'Received', appearance: 'success' },
   received: { label: 'Received', appearance: 'success' }
+};
+
+const NOTIFICATION_POLL_INTERVAL = 20_000;
+
+const notificationMessages = {
+  RESULT_POSTED: (payload) => `Result posted for event ${payload?.eventId ?? ''}`.trim(),
+  SETTLEMENT_GENERATED: (payload) =>
+    `New settlements ready for event ${payload?.eventId ?? ''} (${payload?.count ?? 0})`.trim(),
+  SETTLEMENT_RECEIVED: (payload) => `Settlement ${payload?.obligationId ?? ''} marked received`.trim(),
 };
 
 async function restoreSession() {
@@ -267,6 +307,14 @@ function updateAuthControls() {
   controls.status.textContent = user ? `Signed in as ${user.email}` : 'Not signed in';
   controls.signIn.classList.toggle('hidden', Boolean(user));
   controls.signOut.classList.toggle('hidden', !user);
+
+  const notifications = state.ui.notifications;
+  if (notifications?.container) {
+    notifications.container.classList.toggle('hidden', !user);
+    if (!user && notifications.panel) {
+      notifications.panel.classList.add('hidden');
+    }
+  }
 }
 
 async function handleAuthSubmit(event) {
@@ -307,6 +355,7 @@ function toggleAuthMode() {
 }
 
 function resetDashboard() {
+  stopNotificationPolling();
   state.events = [];
   state.bets = [];
   state.settlements = [];
@@ -315,12 +364,19 @@ function resetDashboard() {
   state.profileStats = null;
   state.achievements.catalog = [];
   state.achievements.mine = [];
+  state.notifications.items = [];
+  state.notifications.status = 'idle';
+  state.notifications.unread = 0;
   state.selectedEventId = null;
   Object.keys(state.status).forEach((key) => {
     state.status[key] = 'idle';
     state.errors[key] = null;
   });
   state.meta.currentUserId = state.auth.user?.id ?? null;
+  state.ui.events.inviteStates = new Map();
+  state.ui.events.joinFeedback = null;
+
+  updateNotificationsUI();
 
   sectionRefs.forEach(({ body }) => {
     clearChildren(body);
@@ -374,6 +430,8 @@ function createHeader() {
   subtitle.textContent = 'Track your wagers, results and payouts in one place.';
   subtitle.className = 'dashboard__subtitle';
 
+  const notifications = createNotificationsWidget();
+
   const controls = document.createElement('div');
   controls.className = 'auth-controls';
 
@@ -412,7 +470,7 @@ function createHeader() {
   });
 
   controls.append(status, signInButton, signOutButton);
-  header.append(title, subtitle, controls);
+  header.append(title, subtitle, notifications, controls);
 
   state.ui.authControls = {
     container: controls,
@@ -422,6 +480,43 @@ function createHeader() {
   };
 
   return header;
+}
+
+function createNotificationsWidget() {
+  const container = document.createElement('div');
+  container.className = 'notifications hidden';
+
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = 'notifications__button';
+  button.setAttribute('aria-label', 'Notifications');
+  button.textContent = '🔔';
+
+  const badge = document.createElement('span');
+  badge.className = 'notifications__badge hidden';
+  button.append(badge);
+
+  const panel = document.createElement('div');
+  panel.className = 'notifications__panel hidden';
+
+  const list = document.createElement('ul');
+  list.className = 'notifications__list';
+  panel.append(list);
+
+  button.addEventListener('click', () => {
+    panel.classList.toggle('hidden');
+    if (!panel.classList.contains('hidden')) {
+      void loadNotifications({ showLoading: false });
+    }
+  });
+
+  container.append(button, panel);
+
+  Object.assign(state.ui.notifications, { container, button, badge, panel, list });
+  updateNotificationsUI();
+  container.classList.toggle('hidden', !state.auth.user);
+
+  return container;
 }
 
 function createNav() {
@@ -489,8 +584,15 @@ async function loadInitialData() {
     return;
   }
 
-  await Promise.all([loadEvents(), loadBets(), loadSettlements(), loadLeaderboard()]);
+  await Promise.all([
+    loadEvents(),
+    loadBets(),
+    loadSettlements(),
+    loadLeaderboard(),
+    loadNotifications({ showLoading: false }),
+  ]);
   await loadProfileStats({ showLoading: false });
+  startNotificationPolling();
 }
 
 async function loadEvents() {
@@ -504,7 +606,24 @@ async function loadEvents() {
   renderEvents();
 
   try {
-    state.events = await getEvents();
+    const events = await getEvents();
+    const currentUserId = state.meta.currentUserId;
+    state.events = Array.isArray(events)
+      ? events.map((event) => {
+          const membership = Array.isArray(event.memberships)
+            ? event.memberships.find((member) => member.userId === currentUserId)
+            : null;
+
+          return {
+            ...event,
+            title: event.title ?? event.name ?? 'Event',
+            description: event.description ?? 'No description available.',
+            status: (event.status ?? 'SCHEDULED').toLowerCase(),
+            closesAt: event.closesAt ?? event.endsAt ?? event.startsAt ?? null,
+            membershipRole: membership?.role ?? 'MEMBER',
+          };
+        })
+      : [];
     updateStatus('events', 'success');
   } catch (error) {
     updateStatus('events', 'error', error);
@@ -637,6 +756,155 @@ async function loadAchievements({ showLoading = true } = {}) {
   renderAchievementsSection();
 }
 
+async function loadNotifications({ showLoading = true } = {}) {
+  if (!state.auth.user) {
+    state.notifications.items = [];
+    state.notifications.status = 'idle';
+    state.notifications.unread = 0;
+    updateNotificationsUI();
+    return;
+  }
+
+  if (showLoading) {
+    state.notifications.status = 'loading';
+  }
+
+  try {
+    const notifications = await getNotificationsList();
+    state.notifications.items = Array.isArray(notifications) ? notifications : [];
+    state.notifications.unread = state.notifications.items.filter((notification) => !notification.readAt).length;
+    state.notifications.status = 'success';
+    state.errors.notifications = null;
+  } catch (error) {
+    state.notifications.status = 'error';
+    state.errors.notifications = error instanceof Error ? error : new Error('Unable to load notifications.');
+  }
+
+  updateNotificationsUI();
+}
+
+function updateNotificationsUI() {
+  const refs = state.ui.notifications;
+  if (!refs) {
+    return;
+  }
+
+  const unread = state.notifications.unread ?? 0;
+
+  if (refs.badge) {
+    refs.badge.textContent = unread > 99 ? '99+' : String(unread);
+    refs.badge.classList.toggle('hidden', unread === 0);
+  }
+
+  if (!refs.list) {
+    return;
+  }
+
+  clearChildren(refs.list);
+
+  if (state.notifications.status === 'loading') {
+    const item = document.createElement('li');
+    item.append(createParagraph('Loading notifications…'));
+    refs.list.append(item);
+    return;
+  }
+
+  if (state.notifications.status === 'error') {
+    const item = document.createElement('li');
+    item.append(
+      createParagraph(
+        state.errors.notifications instanceof Error
+          ? state.errors.notifications.message
+          : 'Unable to load notifications.',
+        'error',
+      ),
+    );
+    refs.list.append(item);
+    return;
+  }
+
+  if (!state.notifications.items.length) {
+    const item = document.createElement('li');
+    item.append(createParagraph('No notifications yet.'));
+    refs.list.append(item);
+    return;
+  }
+
+  state.notifications.items.forEach((notification) => {
+    const item = document.createElement('li');
+    item.className = 'notifications__item';
+    if (!notification.readAt) {
+      item.classList.add('notifications__item--unread');
+    }
+
+    const message = document.createElement('div');
+    message.className = 'notifications__message';
+    message.textContent = formatNotificationMessage(notification);
+
+    const timestamp = document.createElement('time');
+    timestamp.className = 'notifications__time';
+    timestamp.textContent = formatDateTime(notification.createdAt);
+
+    item.append(message, timestamp);
+
+    if (!notification.readAt) {
+      const markButton = document.createElement('button');
+      markButton.type = 'button';
+      markButton.className = 'notifications__action';
+      markButton.textContent = 'Mark read';
+      markButton.addEventListener('click', () => {
+        markNotification(notification.id);
+      });
+      item.append(markButton);
+    }
+
+    refs.list.append(item);
+  });
+}
+
+function formatNotificationMessage(notification) {
+  const formatter = notificationMessages[notification.type];
+  if (typeof formatter === 'function') {
+    return formatter(notification.payload ?? {});
+  }
+
+  return notification.type?.replace(/_/g, ' ') ?? 'Notification';
+}
+
+async function markNotification(id) {
+  try {
+    await markNotificationAsRead(id);
+    const target = state.notifications.items.find((notification) => notification.id === id);
+    if (target && !target.readAt) {
+      target.readAt = new Date().toISOString();
+      state.notifications.unread = Math.max(0, state.notifications.unread - 1);
+      updateNotificationsUI();
+    }
+  } catch (error) {
+    console.error(error);
+  }
+}
+
+function stopNotificationPolling() {
+  if (state.meta.notificationPollId) {
+    window.clearInterval(state.meta.notificationPollId);
+    state.meta.notificationPollId = null;
+  }
+}
+
+function startNotificationPolling() {
+  stopNotificationPolling();
+
+  if (!state.auth.user) {
+    return;
+  }
+
+  void loadNotifications({ showLoading: false });
+  state.meta.notificationPollId = window.setInterval(() => {
+    void loadNotifications({ showLoading: false });
+  }, NOTIFICATION_POLL_INTERVAL);
+}
+
 function updateStatus(section, status, error = null) {
   state.status[section] = status;
   state.errors[section] = error;
@@ -651,6 +919,8 @@ function renderEvents() {
     return;
   }
 
+  body.append(createJoinEventForm());
+
   const status = state.status.events;
   if (status === 'loading') {
     body.append(createParagraph('Loading events…'));
@@ -663,13 +933,99 @@ function renderEvents() {
   }
 
   if (!state.events.length) {
-    body.append(createParagraph('No events yet. Check back soon!'));
+    const message = createParagraph('No events yet. Use an invite code to join your first event.');
+    message.classList.add('muted');
+    body.append(message);
     return;
   }
 
   state.events.forEach((event) => {
     body.append(createEventCard(event));
   });
+}
+
+function createJoinEventForm() {
+  const section = document.createElement('section');
+  section.className = 'card invite-card';
+
+  const heading = document.createElement('h3');
+  heading.className = 'card__title';
+  heading.textContent = 'Join via invite code';
+
+  const form = document.createElement('form');
+  form.className = 'invite-card__form';
+
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.required = true;
+  input.placeholder = 'Paste invite code';
+  input.className = 'invite-card__input';
+
+  const submit = document.createElement('button');
+  submit.type = 'submit';
+  submit.className = 'button';
+  submit.textContent = 'Join event';
+
+  const status = document.createElement('p');
+  status.className = 'invite-card__status hidden';
+
+  form.addEventListener('submit', handleJoinEventSubmit);
+  form.append(input, submit);
+  section.append(heading, form, status);
+
+  state.ui.events.joinForm = form;
+  state.ui.events.joinInput = input;
+  state.ui.events.joinStatus = status;
+
+  if (state.ui.events.joinFeedback) {
+    const { type, message } = state.ui.events.joinFeedback;
+    status.textContent = message;
+    status.classList.toggle('hidden', !message);
+    status.classList.toggle('error', type === 'error');
+  } else {
+    status.classList.add('hidden');
+  }
+
+  return section;
+}
+
+async function handleJoinEventSubmit(event) {
+  event.preventDefault();
+
+  const refs = state.ui.events;
+  if (!refs.joinInput || !refs.joinStatus) {
+    return;
+  }
+
+  const code = refs.joinInput.value.trim();
+  if (!code) {
+    refs.joinStatus.textContent = 'Invite code is required.';
+    refs.joinStatus.classList.remove('hidden');
+    refs.joinStatus.classList.add('error');
+    state.ui.events.joinFeedback = { type: 'error', message: 'Invite code is required.' };
+    return;
+  }
+
+  refs.joinStatus.classList.remove('hidden');
+  refs.joinStatus.classList.remove('error');
+  refs.joinStatus.textContent = 'Joining event…';
+  state.ui.events.joinFeedback = null;
+
+  try {
+    await joinEventWithInvite(code);
+    refs.joinInput.value = '';
+    refs.joinStatus.textContent = 'Invite accepted! Loading events…';
+    state.ui.events.joinFeedback = { type: 'success', message: 'Invite accepted!' };
+    await loadEvents();
+    await loadBets();
+    await loadSettlements();
+    await loadNotifications({ showLoading: false });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Unable to join event.';
+    refs.joinStatus.textContent = message;
+    refs.joinStatus.classList.add('error');
+    state.ui.events.joinFeedback = { type: 'error', message };
+  }
 }
 
 function createEventCard(event) {
@@ -681,31 +1037,89 @@ function createEventCard(event) {
 
   const title = document.createElement('h3');
   title.className = 'card__title';
-  title.textContent = event.title;
+  title.textContent = event.title ?? event.name ?? 'Event';
 
-  const statusInfo = eventStatusStyles[event.status] ?? { label: event.status, appearance: 'muted' };
+  const statusKey = (event.status ?? 'scheduled').toLowerCase();
+  const statusInfo = eventStatusStyles[statusKey] ?? { label: event.status ?? 'Pending', appearance: 'muted' };
   const statusBadge = createStatusBadge(statusInfo.label, statusInfo.appearance);
 
   header.append(title, statusBadge);
 
+  const roleLine = document.createElement('p');
+  roleLine.className = 'card__subtitle';
+  roleLine.textContent = `Your role: ${event.membershipRole ?? 'MEMBER'}`;
+
+  const tabs = document.createElement('div');
+  tabs.className = 'card__tabs';
+
+  const detailsTab = document.createElement('button');
+  detailsTab.type = 'button';
+  detailsTab.className = 'card__tab card__tab--active';
+  detailsTab.textContent = 'Details';
+
+  const invitesTab = document.createElement('button');
+  invitesTab.type = 'button';
+  invitesTab.className = 'card__tab';
+  invitesTab.textContent = 'Invites';
+
+  tabs.append(detailsTab, invitesTab);
+
+  const detailsSection = document.createElement('div');
+  detailsSection.className = 'card__section';
+
+  const invitesSection = document.createElement('div');
+  invitesSection.className = 'card__section hidden';
+
+  const updateDetails = () => buildEventDetailsSection(event, detailsSection);
+  const updateInvites = () => buildEventInvitesSection(event, invitesSection, updateInvites);
+
+  updateDetails();
+
+  detailsTab.addEventListener('click', () => {
+    detailsTab.classList.add('card__tab--active');
+    invitesTab.classList.remove('card__tab--active');
+    detailsSection.classList.remove('hidden');
+    invitesSection.classList.add('hidden');
+  });
+
+  invitesTab.addEventListener('click', () => {
+    invitesTab.classList.add('card__tab--active');
+    detailsTab.classList.remove('card__tab--active');
+    detailsSection.classList.add('hidden');
+    invitesSection.classList.remove('hidden');
+    void ensureEventMembers(event.id, updateInvites);
+    updateInvites();
+  });
+
+  card.append(header, roleLine, tabs, detailsSection, invitesSection);
+
+  return card;
+}
+
+function buildEventDetailsSection(event, container) {
+  clearChildren(container);
+
   const description = document.createElement('p');
   description.className = 'card__description';
-  description.textContent = event.description;
+  description.textContent = event.description ?? 'No description available.';
 
   const metaList = document.createElement('div');
   metaList.className = 'card__meta';
 
+  const closesAt = event.closesAt ?? event.endsAt ?? event.startsAt ?? null;
   const closes = document.createElement('div');
-  closes.innerHTML = `<span>Closes:</span> ${formatDateTime(event.closesAt)}`;
+  closes.innerHTML = `<span>Ends:</span> ${closesAt ? formatDateTime(closesAt) : 'TBD'}`;
 
-  const pool = document.createElement('div');
-  pool.innerHTML = `<span>Pool:</span> ${formatNumber(event.totalPool)} units`;
+  const participantCount = Array.isArray(event.participants) ? event.participants.length : 0;
+  const participants = document.createElement('div');
+  participants.innerHTML = `<span>Participants:</span> ${participantCount}`;
 
-  metaList.append(closes, pool);
+  metaList.append(closes, participants);
 
-  card.append(header, description, metaList);
+  container.append(description, metaList);
 
-  if (event.status === 'settled') {
+  const statusKey = (event.status ?? '').toLowerCase();
+  if (['completed', 'settled'].includes(statusKey)) {
     const action = document.createElement('div');
     action.className = 'card__actions';
 
@@ -716,10 +1130,180 @@ function createEventCard(event) {
     button.addEventListener('click', () => showResultsForEvent(event.id));
 
     action.append(button);
-    card.append(action);
+    container.append(action);
+  }
+}
+
+function getInviteState(eventId) {
+  const map = state.ui.events.inviteStates;
+  if (!map.has(eventId)) {
+    map.set(eventId, {
+      inviteCode: null,
+      loading: false,
+      error: null,
+      members: [],
+      membersLoaded: false,
+      membersLoading: false,
+      membersError: null,
+    });
   }
 
-  return card;
+  return map.get(eventId);
+}
+
+async function ensureEventMembers(eventId, onUpdate) {
+  const inviteState = getInviteState(eventId);
+
+  if (inviteState.membersLoaded || inviteState.membersLoading) {
+    return;
+  }
+
+  inviteState.membersLoading = true;
+  inviteState.membersError = null;
+  onUpdate?.();
+
+  try {
+    const members = await getEventMembers(eventId);
+    inviteState.members = Array.isArray(members) ? members : [];
+    inviteState.membersLoaded = true;
+  } catch (error) {
+    inviteState.membersError = error instanceof Error ? error.message : 'Unable to load members.';
+  } finally {
+    inviteState.membersLoading = false;
+    onUpdate?.();
+  }
+}
+
+function buildEventInvitesSection(event, container, onUpdate) {
+  const inviteState = getInviteState(event.id);
+  clearChildren(container);
+
+  const roleInfo = createParagraph(`Your role: ${event.membershipRole ?? 'MEMBER'}`);
+  roleInfo.classList.add('muted');
+  container.append(roleInfo);
+
+  const isManager = ['ADMIN', 'OWNER'].includes(event.membershipRole ?? 'MEMBER');
+
+  if (isManager) {
+    const form = document.createElement('form');
+    form.className = 'invite-form';
+
+    const expiresLabel = document.createElement('label');
+    expiresLabel.textContent = 'Expires (optional)';
+    const expiresInput = document.createElement('input');
+    expiresInput.type = 'datetime-local';
+    expiresInput.name = 'expiresAt';
+
+    const maxUsesLabel = document.createElement('label');
+    maxUsesLabel.textContent = 'Max uses (optional)';
+    const maxUsesInput = document.createElement('input');
+    maxUsesInput.type = 'number';
+    maxUsesInput.name = 'maxUses';
+    maxUsesInput.min = '1';
+
+    const submit = document.createElement('button');
+    submit.type = 'submit';
+    submit.className = 'button';
+    submit.textContent = inviteState.loading ? 'Creating…' : 'Create invite';
+    submit.disabled = inviteState.loading;
+
+    form.append(expiresLabel, expiresInput, maxUsesLabel, maxUsesInput, submit);
+
+    form.addEventListener('submit', async (eventSubmit) => {
+      eventSubmit.preventDefault();
+      inviteState.loading = true;
+      inviteState.error = null;
+      onUpdate?.();
+
+      const payload = {};
+      if (expiresInput.value) {
+        const iso = new Date(expiresInput.value).toISOString();
+        payload.expiresAt = iso;
+      }
+      if (maxUsesInput.value) {
+        payload.maxUses = Number.parseInt(maxUsesInput.value, 10);
+      }
+
+      try {
+        const response = await createEventInvite(event.id, payload);
+        inviteState.inviteCode = response?.inviteCode ?? null;
+      } catch (error) {
+        inviteState.error = error instanceof Error ? error.message : 'Unable to create invite.';
+      } finally {
+        inviteState.loading = false;
+        onUpdate?.();
+      }
+    });
+
+    container.append(form);
+  } else {
+    container.append(createParagraph('Only event admins can generate new invite codes.'));
+  }
+
+  if (inviteState.loading) {
+    container.append(createParagraph('Generating invite…'));
+  }
+
+  if (inviteState.error) {
+    container.append(createParagraph(inviteState.error, 'error'));
+  }
+
+  if (inviteState.inviteCode) {
+    const codeRow = document.createElement('div');
+    codeRow.className = 'invite-code';
+
+    const codeInput = document.createElement('input');
+    codeInput.type = 'text';
+    codeInput.readOnly = true;
+    codeInput.value = inviteState.inviteCode;
+
+    const copyButton = document.createElement('button');
+    copyButton.type = 'button';
+    copyButton.className = 'button button--secondary';
+    copyButton.textContent = 'Copy';
+    copyButton.addEventListener('click', async () => {
+      try {
+        if (navigator?.clipboard) {
+          await navigator.clipboard.writeText(inviteState.inviteCode ?? '');
+        }
+      } catch {
+        // ignore clipboard errors
+      }
+    });
+
+    codeRow.append(codeInput, copyButton);
+    container.append(codeRow);
+  }
+
+  const membersSection = document.createElement('div');
+  membersSection.className = 'invite-members';
+
+  const membersTitle = document.createElement('h4');
+  membersTitle.textContent = 'Members';
+  membersSection.append(membersTitle);
+
+  if (inviteState.membersLoading) {
+    membersSection.append(createParagraph('Loading members…'));
+  } else if (inviteState.membersError) {
+    membersSection.append(createParagraph(inviteState.membersError, 'error'));
+  } else if (inviteState.members.length) {
+    const list = document.createElement('ul');
+    list.className = 'invite-members__list';
+
+    inviteState.members.forEach((member) => {
+      const item = document.createElement('li');
+      const role = member.role ?? 'MEMBER';
+      const label = member.user?.email ?? member.userId;
+      item.textContent = `${label} — ${role}`;
+      list.append(item);
+    });
+
+    membersSection.append(list);
+  } else {
+    membersSection.append(createParagraph('No members yet.'));
+  }
+
+  container.append(membersSection);
 }
 
 function renderBets() {

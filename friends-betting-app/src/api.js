@@ -216,6 +216,37 @@ export async function markSettlementReceived(id) {
   });
 }
 
+export async function createEventInvite(eventId, payload = {}) {
+  if (!eventId) {
+    throw new Error('Missing event identifier');
+  }
+
+  return request(`/events/${eventId}/invites`, {
+    method: 'POST',
+    body: payload,
+  });
+}
+
+export async function joinEventWithInvite(inviteCode) {
+  if (!inviteCode) {
+    throw new Error('Invite code is required.');
+  }
+
+  return request('/invites/join', {
+    method: 'POST',
+    body: { inviteCode },
+  });
+}
+
+export async function getEventMembers(eventId) {
+  if (!eventId) {
+    throw new Error('Missing event identifier');
+  }
+
+  const data = await request(`/events/${eventId}/members`);
+  return Array.isArray(data?.members) ? data.members : [];
+}
+
 export async function getResults(eventId) {
   if (!eventId) {
     throw new Error('Missing event identifier');
@@ -250,4 +281,24 @@ export async function getMyAchievements(userId) {
 
   const data = await request(`/achievements/mine?userId=${encodeURIComponent(userId)}`);
   return Array.isArray(data?.achievements) ? data.achievements : [];
+}
+
+export async function getNotificationsList(limit = 25) {
+  const params = new URLSearchParams();
+  if (limit) {
+    params.set('limit', String(limit));
+  }
+
+  const data = await request(`/notifications?${params.toString()}`);
+  return Array.isArray(data?.notifications) ? data.notifications : [];
+}
+
+export async function markNotificationAsRead(id) {
+  if (!id) {
+    throw new Error('Notification id is required.');
+  }
+
+  return request(`/notifications/${id}/read`, {
+    method: 'POST',
+  });
 }

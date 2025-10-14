@@ -1,16 +1,31 @@
 import { Router } from 'express';
-import { Role, SettlementStatus } from '@prisma/client';
+import { EventRole, SettlementStatus } from '@prisma/client';
 import { prisma } from '../lib/prisma';
 import { generateSettlements } from '../modules/settlements/settlements.service';
 import { getUserStats, updateStatsForSettlement } from '../services/stats.service';
-import { requireAuth, requireRole } from '../middleware/requireAuth';
+import { requireAuth } from '../middleware/requireAuth';
+import { requireEventRole } from '../services/acl.service';
+import { notify, notifyMany } from '../services/notify.service';
 
 const router = Router();
 
 router.use(requireAuth);
 
-router.get('/', async (_req, res) => {
+router.get('/', async (req, res) => {
   const settlements = await prisma.settlement.findMany({
+    where: {
+      bet: {
+        subCompetition: {
+          event: {
+            memberships: {
+              some: {
+                userId: req.user!.id,
+              },
+            },
+          },
+        },
+      },
+    },
     include: {
       bet: {
         include: {
@@ -32,7 +47,7 @@ router.get('/', async (_req, res) => {
   });
 });
 
-router.post('/:id/mark-received', requireRole(Role.ADMIN), async (req, res) => {
+router.post('/:id/mark-received', async (req, res) => {
   const { id } = req.params;
 
   if (!id) {
@@ -40,13 +55,34 @@ router.post('/:id/mark-received', requireRole(Role.ADMIN), async (req, res) => {
   }
 
   try {
+    const existing = await prisma.settlement.findUnique({
+      where: { id },
+      include: {
+        bet: {
+          include: {
+            subCompetition: {
+              select: {
+                eventId: true,
+              },
+            },
+          },
+        },
+      },
+    });
+
+    if (!existing) {
+      return res.status(404).json({ ok: false, message: 'Settlement not found.' });
+    }
+
+    const eventId = existing.bet?.subCompetition?.eventId;
+
+    if (!eventId) {
+      return res.status(400).json({ ok: false, message: 'Unable to determine event for settlement.' });
+    }
+
+    await requireEventRole(eventId, req.user!.id, EventRole.ADMIN);
+
     const { settlement, stats } = await prisma.$transaction(async (tx) => {
-      const existing = await tx.settlement.findUnique({ where: { id } });
-
-      if (!existing) {
-        throw new Error('Settlement not found.');
-      }
-
       const updatedSettlement = await tx.settlement.update({
         where: { id },
         data: {
@@ -61,6 +97,14 @@ router.post('/:id/mark-received', requireRole(Role.ADMIN), async (req, res) => {
     });
 
     const profile = await getUserStats(stats.userId);
+
+    const payerId = existing.bet.userId;
+    const payeeId = stats.userId;
+    const recipients = Array.from(new Set([payerId, payeeId].filter(Boolean)));
+
+    await notifyMany(recipients, 'SETTLEMENT_RECEIVED', {
+      obligationId: settlement.id,
+    });
 
     return res.status(200).json({
       ok: true,
@@ -78,11 +122,34 @@ router.post('/:id/mark-received', requireRole(Role.ADMIN), async (req, res) => {
   }
 });
 
-router.get('/events/:eventId', requireRole(Role.ADMIN), async (req, res) => {
+router.get('/events/:eventId', async (req, res) => {
   const { eventId } = req.params;
 
   try {
+    await requireEventRole(eventId, req.user!.id, EventRole.ADMIN);
+  } catch (error) {
+    const status = (error as any)?.statusCode ?? 403;
+    const message = error instanceof Error ? error.message : 'Forbidden.';
+    return res.status(status).json({ ok: false, message });
+  }
+
+  try {
     const data = await generateSettlements(eventId);
+
+    const settlementCounts = new Map<string, number>();
+
+    for (const payout of data.payouts) {
+      settlementCounts.set(payout.userId, (settlementCounts.get(payout.userId) ?? 0) + 1);
+    }
+
+    await Promise.all(
+      Array.from(settlementCounts.entries()).map(([userId, count]) =>
+        notify(userId, 'SETTLEMENT_GENERATED', {
+          eventId,
+          count,
+        }),
+      ),
+    );
 
     return res.status(200).json({
       ok: true,

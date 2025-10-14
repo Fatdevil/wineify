@@ -16,10 +16,10 @@
 
 ## Database migrations
 
-Apply the auth migration (and any existing migrations) before starting the API:
+Apply the full migration history before starting the API:
 
 ```bash
-npx prisma migrate dev --name auth_real_users
+npx prisma migrate dev
 ```
 
 ## Authentication
@@ -84,6 +84,54 @@ All `/stats`, `/bets`, `/results`, and `/settlements` endpoints now require a va
 
 - `GET /api/achievements` — lists every possible achievement and XP reward.
 - `GET /api/achievements/mine?userId=USER_ID` — returns the caller's unlocked achievements with timestamps.
+
+## Private Events & Invites
+
+Events are private by default. Users must hold an active membership to read event data, place bets, or view results.
+
+### Role matrix
+
+| Capability | OWNER | ADMIN | MEMBER |
+|------------|:-----:|:-----:|:------:|
+| View event details, bets, results | ✅ | ✅ | ✅ |
+| Place bets | ✅ | ✅ | ✅ |
+| Record results / generate settlements | ✅ | ✅ | ❌ |
+| Manage event roles | ✅ | ✅ | ❌ |
+| Create / revoke invites | ✅ | ✅ | ❌ |
+
+### Useful cURL commands
+
+```bash
+# Create a time-boxed invite (ADMIN/OWNER only)
+curl -X POST http://localhost:3000/api/events/EVENT_ID/invites \
+  -H "Authorization: Bearer $access" \
+  -H "Content-Type: application/json" \
+  -d '{"expiresAt":"2025-12-31T23:59:59Z","maxUses":5}'
+
+# Join using an invite code (any authenticated user)
+curl -X POST http://localhost:3000/api/invites/join \
+  -H "Authorization: Bearer $access" \
+  -H "Content-Type: application/json" \
+  -d '{"inviteCode":"PASTE_CODE_HERE"}'
+
+# List members and their event roles
+curl http://localhost:3000/api/events/EVENT_ID/members \
+  -H "Authorization: Bearer $access"
+
+# Promote a member to ADMIN
+curl -X POST http://localhost:3000/api/events/EVENT_ID/members/USER_ID/role \
+  -H "Authorization: Bearer $access" \
+  -H "Content-Type: application/json" \
+  -d '{"role":"ADMIN"}'
+
+# Fetch unread notifications
+curl http://localhost:3000/api/notifications \
+  -H "Authorization: Bearer $access"
+
+# Mark a notification as read
+curl -X POST http://localhost:3000/api/notifications/NOTIFICATION_ID/read \
+  -H "Authorization: Bearer $access"
+```
 
 ## Running the service
 

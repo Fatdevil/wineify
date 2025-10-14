@@ -34,7 +34,19 @@ A lightweight dashboard that visualises friends betting activity against the Win
 
 ## API expectations
 
-The dashboard expects the Wineify backend to be available at `http://localhost:3000/api`. Authentication tokens stored in `localStorage` under the key `jwt` are automatically attached to requests.
+The dashboard expects the Wineify backend to be available at `http://localhost:3000/api`. A short-lived access token is held in memory, while the refresh token is persisted in `localStorage` under the key `wineify.refreshToken` so the session can be restored on reload.
+
+### Joining a private event
+
+1. Ask an event admin for an invite code generated from `/events/:eventId/invites`.
+2. Open the dashboard, authenticate, and use the **Join via invite code** input on the events view.
+3. Paste the code and submit — once accepted, the event cards unlock immediately and show your current role in the event header.
+
+### Staying informed
+
+- A bell icon appears in the top right once you are signed in. The badge shows unread notifications and the panel polls the API every 20 seconds.
+- Posting results, generating settlements, or marking obligations received will surface notifications to relevant members.
+- Click any unread notification to mark it as read and collapse your badge count.
 
 ## Project structure
 
