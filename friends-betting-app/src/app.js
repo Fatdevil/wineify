@@ -7,7 +7,12 @@ import {
   getLeaderboard,
   getProfileStats,
   getAchievements,
-  getMyAchievements
+  getMyAchievements,
+  initializeSession,
+  registerUser,
+  loginUser,
+  logoutUser,
+  getCurrentUser
 } from './api.js';
 import {
   formatDateTime,
@@ -55,12 +60,33 @@ const state = {
   ui: {
     activeSection: 'events',
     markingSettlementId: null,
-    profileLevelUp: false
+    profileLevelUp: false,
+    auth: {
+      overlay: null,
+      title: null,
+      error: null,
+      email: null,
+      password: null,
+      submit: null,
+      toggle: null
+    },
+    authControls: {
+      container: null,
+      status: null,
+      signIn: null,
+      signOut: null
+    }
   },
   meta: {
     currentUserId: null,
     lastProfileXp: 0,
     lastProfileLevel: 1
+  },
+  auth: {
+    user: null,
+    mode: 'login',
+    status: 'idle',
+    error: null
   }
 };
 
@@ -76,14 +102,6 @@ const navItems = [
 
 const sectionRefs = new Map();
 const navRefs = new Map();
-
-function getCurrentUserId() {
-  if (typeof window === 'undefined' || !window.localStorage) {
-    return null;
-  }
-
-  return window.localStorage.getItem('userId');
-}
 
 const eventStatusStyles = {
   open: { label: 'Open', appearance: 'info' },
@@ -104,18 +122,242 @@ const settlementStatusStyles = {
   received: { label: 'Received', appearance: 'success' }
 };
 
+async function restoreSession() {
+  const restoredUser = await initializeSession();
+
+  if (restoredUser) {
+    state.auth.user = restoredUser;
+    state.meta.currentUserId = restoredUser.id ?? null;
+    hideAuthOverlay();
+    updateAuthControls();
+    await loadInitialData();
+  } else if (!state.auth.user) {
+    showAuthOverlay('login');
+    updateAuthOverlay();
+  }
+}
+
+function createAuthOverlay() {
+  const overlay = document.createElement('div');
+  overlay.className = 'auth-overlay hidden';
+
+  const panel = document.createElement('div');
+  panel.className = 'auth-panel';
+
+  const title = document.createElement('h2');
+  title.className = 'auth-panel__title';
+
+  const errorMessage = document.createElement('p');
+  errorMessage.className = 'auth-panel__error hidden';
+
+  const form = document.createElement('form');
+  form.className = 'auth-form';
+
+  const emailLabel = document.createElement('label');
+  emailLabel.textContent = 'Email';
+  emailLabel.className = 'auth-form__label';
+
+  const emailInput = document.createElement('input');
+  emailInput.type = 'email';
+  emailInput.required = true;
+  emailInput.autocomplete = 'email';
+  emailInput.className = 'auth-form__input';
+
+  const passwordLabel = document.createElement('label');
+  passwordLabel.textContent = 'Password';
+  passwordLabel.className = 'auth-form__label';
+
+  const passwordInput = document.createElement('input');
+  passwordInput.type = 'password';
+  passwordInput.required = true;
+  passwordInput.minLength = 8;
+  passwordInput.autocomplete = 'current-password';
+  passwordInput.className = 'auth-form__input';
+
+  const submitButton = document.createElement('button');
+  submitButton.type = 'submit';
+  submitButton.className = 'auth-form__submit';
+
+  const toggleButton = document.createElement('button');
+  toggleButton.type = 'button';
+  toggleButton.className = 'auth-form__toggle';
+
+  form.append(emailLabel, emailInput, passwordLabel, passwordInput, submitButton);
+  panel.append(title, errorMessage, form, toggleButton);
+  overlay.append(panel);
+
+  form.addEventListener('submit', handleAuthSubmit);
+  toggleButton.addEventListener('click', toggleAuthMode);
+
+  state.ui.auth = {
+    overlay,
+    title,
+    error: errorMessage,
+    email: emailInput,
+    password: passwordInput,
+    submit: submitButton,
+    toggle: toggleButton
+  };
+
+  updateAuthOverlay();
+
+  return overlay;
+}
+
+function updateAuthOverlay() {
+  const refs = state.ui.auth;
+  if (!refs?.overlay) {
+    return;
+  }
+
+  const mode = state.auth.mode;
+  const isLoading = state.auth.status === 'loading';
+
+  refs.title.textContent = mode === 'login' ? 'Sign in to Wineify' : 'Create your account';
+  refs.submit.textContent = isLoading
+    ? 'Please wait…'
+    : mode === 'login'
+      ? 'Sign in'
+      : 'Register';
+  refs.submit.disabled = isLoading;
+  refs.email.disabled = isLoading;
+  refs.password.disabled = isLoading;
+
+  refs.toggle.textContent =
+    mode === 'login' ? 'Need an account? Register' : 'Already have an account? Sign in';
+
+  const hasError = Boolean(state.auth.error);
+  refs.error.textContent = state.auth.error ?? '';
+  refs.error.classList.toggle('hidden', !hasError);
+}
+
+function showAuthOverlay(mode = 'login') {
+  state.auth.mode = mode;
+  state.auth.error = null;
+
+  const refs = state.ui.auth;
+  if (!refs?.overlay) {
+    return;
+  }
+
+  refs.overlay.classList.remove('hidden');
+  refs.email.value = '';
+  refs.password.value = '';
+  updateAuthOverlay();
+  refs.email.focus();
+}
+
+function hideAuthOverlay() {
+  const refs = state.ui.auth;
+  if (!refs?.overlay) {
+    return;
+  }
+
+  refs.overlay.classList.add('hidden');
+}
+
+function updateAuthControls() {
+  const controls = state.ui.authControls;
+  if (!controls?.container) {
+    return;
+  }
+
+  const user = state.auth.user;
+
+  controls.status.textContent = user ? `Signed in as ${user.email}` : 'Not signed in';
+  controls.signIn.classList.toggle('hidden', Boolean(user));
+  controls.signOut.classList.toggle('hidden', !user);
+}
+
+async function handleAuthSubmit(event) {
+  event.preventDefault();
+
+  const refs = state.ui.auth;
+  if (!refs) {
+    return;
+  }
+
+  const email = refs.email.value.trim();
+  const password = refs.password.value;
+
+  state.auth.status = 'loading';
+  state.auth.error = null;
+  updateAuthOverlay();
+
+  try {
+    const action = state.auth.mode === 'login' ? loginUser : registerUser;
+    const payload = await action(email, password);
+    state.auth.user = payload?.user ?? null;
+    state.meta.currentUserId = state.auth.user?.id ?? null;
+    hideAuthOverlay();
+    updateAuthControls();
+    await loadInitialData();
+  } catch (error) {
+    state.auth.error = error instanceof Error ? error.message : 'Unable to authenticate.';
+  } finally {
+    state.auth.status = 'idle';
+    updateAuthOverlay();
+  }
+}
+
+function toggleAuthMode() {
+  state.auth.mode = state.auth.mode === 'login' ? 'register' : 'login';
+  state.auth.error = null;
+  updateAuthOverlay();
+}
+
+function resetDashboard() {
+  state.events = [];
+  state.bets = [];
+  state.settlements = [];
+  state.results = null;
+  state.leaderboard = [];
+  state.profileStats = null;
+  state.achievements.catalog = [];
+  state.achievements.mine = [];
+  state.selectedEventId = null;
+  Object.keys(state.status).forEach((key) => {
+    state.status[key] = 'idle';
+    state.errors[key] = null;
+  });
+  state.meta.currentUserId = state.auth.user?.id ?? null;
+
+  sectionRefs.forEach(({ body }) => {
+    clearChildren(body);
+    body.append(createParagraph('Sign in to view this section.'));
+  });
+}
+
 function init() {
   const app = document.querySelector('#app');
   if (!app) {
     return;
   }
 
-  state.meta.currentUserId = getCurrentUserId();
-
   app.className = 'dashboard';
-  app.append(createHeader(), createNav(), createMain());
+  const header = createHeader();
+  const nav = createNav();
+  const main = createMain();
+  const overlay = createAuthOverlay();
+
+  app.append(header, nav, main, overlay);
+
+  state.auth.user = getCurrentUser() ?? null;
+  state.meta.currentUserId = state.auth.user?.id ?? null;
+
+  updateAuthControls();
   setActiveSection('events');
-  loadInitialData();
+  resetDashboard();
+
+  if (state.auth.user) {
+    hideAuthOverlay();
+    void loadInitialData();
+  } else {
+    showAuthOverlay('login');
+    updateAuthOverlay();
+  }
+
+  void restoreSession();
 }
 
 document.addEventListener('DOMContentLoaded', init);
@@ -132,7 +374,53 @@ function createHeader() {
   subtitle.textContent = 'Track your wagers, results and payouts in one place.';
   subtitle.className = 'dashboard__subtitle';
 
-  header.append(title, subtitle);
+  const controls = document.createElement('div');
+  controls.className = 'auth-controls';
+
+  const status = document.createElement('span');
+  status.className = 'auth-controls__status';
+
+  const signInButton = document.createElement('button');
+  signInButton.type = 'button';
+  signInButton.className = 'auth-controls__button';
+  signInButton.textContent = 'Sign in';
+  signInButton.addEventListener('click', () => {
+    state.auth.mode = 'login';
+    showAuthOverlay('login');
+    updateAuthOverlay();
+  });
+
+  const signOutButton = document.createElement('button');
+  signOutButton.type = 'button';
+  signOutButton.className = 'auth-controls__button hidden';
+  signOutButton.textContent = 'Sign out';
+  signOutButton.addEventListener('click', async () => {
+    signOutButton.disabled = true;
+    try {
+      await logoutUser({ all: false });
+    } finally {
+      signOutButton.disabled = false;
+    }
+
+    state.auth.user = null;
+    state.auth.error = null;
+    state.meta.currentUserId = null;
+    resetDashboard();
+    updateAuthControls();
+    showAuthOverlay('login');
+    updateAuthOverlay();
+  });
+
+  controls.append(status, signInButton, signOutButton);
+  header.append(title, subtitle, controls);
+
+  state.ui.authControls = {
+    container: controls,
+    status,
+    signIn: signInButton,
+    signOut: signOutButton
+  };
+
   return header;
 }
 
@@ -197,11 +485,21 @@ function setActiveSection(id) {
 }
 
 async function loadInitialData() {
+  if (!state.auth.user) {
+    return;
+  }
+
   await Promise.all([loadEvents(), loadBets(), loadSettlements(), loadLeaderboard()]);
   await loadProfileStats({ showLoading: false });
 }
 
 async function loadEvents() {
+  if (!state.auth.user) {
+    updateStatus('events', 'idle');
+    renderEvents();
+    return;
+  }
+
   updateStatus('events', 'loading');
   renderEvents();
 
@@ -216,6 +514,12 @@ async function loadEvents() {
 }
 
 async function loadBets() {
+  if (!state.auth.user) {
+    updateStatus('bets', 'idle');
+    renderBets();
+    return;
+  }
+
   updateStatus('bets', 'loading');
   renderBets();
 
@@ -230,6 +534,12 @@ async function loadBets() {
 }
 
 async function loadSettlements() {
+  if (!state.auth.user) {
+    updateStatus('settlements', 'idle');
+    renderSettlements();
+    return;
+  }
+
   updateStatus('settlements', 'loading');
   renderSettlements();
 
@@ -244,6 +554,12 @@ async function loadSettlements() {
 }
 
 async function loadLeaderboard() {
+  if (!state.auth.user) {
+    updateStatus('leaderboard', 'idle');
+    renderLeaderboardSection();
+    return;
+  }
+
   updateStatus('leaderboard', 'loading');
   renderLeaderboardSection();
 
@@ -294,6 +610,12 @@ async function loadProfileStats({ showLoading = true } = {}) {
 }
 
 async function loadAchievements({ showLoading = true } = {}) {
+  if (!state.auth.user) {
+    updateStatus('achievements', 'idle');
+    renderAchievementsSection();
+    return;
+  }
+
   if (showLoading) {
     updateStatus('achievements', 'loading');
     renderAchievementsSection();
@@ -323,6 +645,11 @@ function updateStatus(section, status, error = null) {
 function renderEvents() {
   const { body } = sectionRefs.get('events');
   clearChildren(body);
+
+  if (!state.auth.user) {
+    body.append(createParagraph('Sign in to view upcoming events.'));
+    return;
+  }
 
   const status = state.status.events;
   if (status === 'loading') {
@@ -399,6 +726,11 @@ function renderBets() {
   const { body } = sectionRefs.get('bets');
   clearChildren(body);
 
+  if (!state.auth.user) {
+    body.append(createParagraph('Sign in to view your bets.'));
+    return;
+  }
+
   const status = state.status.bets;
   if (status === 'loading') {
     body.append(createParagraph('Loading your bets…'));
@@ -471,6 +803,11 @@ function renderSettlements() {
   const { body } = sectionRefs.get('settlements');
   clearChildren(body);
 
+  if (!state.auth.user) {
+    body.append(createParagraph('Sign in to view settlements.'));
+    return;
+  }
+
   const status = state.status.settlements;
   if (status === 'loading') {
     body.append(createParagraph('Loading settlements…'));
@@ -501,6 +838,11 @@ function renderLeaderboardSection() {
   const { body } = refs;
   clearChildren(body);
 
+  if (!state.auth.user) {
+    body.append(createParagraph('Sign in to view the leaderboard.'));
+    return;
+  }
+
   const status = state.status.leaderboard;
   if (status === 'loading') {
     body.append(createParagraph('Loading leaderboard…'));
@@ -523,6 +865,11 @@ function renderAchievementsSection() {
 
   const { body } = refs;
   clearChildren(body);
+
+  if (!state.auth.user) {
+    body.append(createParagraph('Sign in to track your achievements.'));
+    return;
+  }
 
   const status = state.status.achievements;
 
@@ -637,6 +984,12 @@ function createSettlementCard(settlement) {
 }
 
 async function handleMarkSettlement(id) {
+  if (!state.auth.user) {
+    showAuthOverlay('login');
+    updateAuthOverlay();
+    return;
+  }
+
   state.ui.markingSettlementId = id;
   renderSettlements();
 
@@ -676,12 +1029,24 @@ async function handleMarkSettlement(id) {
 }
 
 function showResultsForEvent(eventId) {
+  if (!state.auth.user) {
+    showAuthOverlay('login');
+    updateAuthOverlay();
+    return;
+  }
+
   state.selectedEventId = eventId;
   setActiveSection('results');
   loadResults(eventId);
 }
 
 async function loadResults(eventId) {
+  if (!state.auth.user) {
+    updateStatus('results', 'idle');
+    renderResults();
+    return;
+  }
+
   updateStatus('results', 'loading');
   renderResults();
 
@@ -698,6 +1063,11 @@ async function loadResults(eventId) {
 function renderResults() {
   const { body } = sectionRefs.get('results');
   clearChildren(body);
+
+  if (!state.auth.user) {
+    body.append(createParagraph('Sign in to view results.'));
+    return;
+  }
 
   if (!state.selectedEventId) {
     body.append(createParagraph('Select an event to see results.'));

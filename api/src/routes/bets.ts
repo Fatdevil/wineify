@@ -1,7 +1,10 @@
 import { Router } from 'express';
 import { prisma } from '../lib/prisma';
+import { requireAuth } from '../middleware/requireAuth';
 
 const router = Router();
+
+router.use(requireAuth);
 
 router.get('/', async (_req, res) => {
   const bets = await prisma.bet.findMany({
