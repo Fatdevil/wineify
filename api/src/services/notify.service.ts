@@ -1,10 +1,9 @@
+import type { Prisma } from '@prisma/client';
 import { prisma } from '../lib/prisma';
 
-export async function notify<Payload extends Record<string, unknown>>(
-  userId: string,
-  type: string,
-  payload: Payload,
-) {
+export type NotificationPayload = Prisma.InputJsonValue;
+
+export async function notify(userId: string, type: string, payload: NotificationPayload) {
   return prisma.notification.create({
     data: {
       userId,
@@ -14,11 +13,7 @@ export async function notify<Payload extends Record<string, unknown>>(
   });
 }
 
-export async function notifyMany<Payload extends Record<string, unknown>>(
-  userIds: string[],
-  type: string,
-  payload: Payload,
-) {
+export async function notifyMany(userIds: string[], type: string, payload: NotificationPayload) {
   if (userIds.length === 0) {
     return [];
   }
@@ -38,11 +33,7 @@ export async function notifyMany<Payload extends Record<string, unknown>>(
   );
 }
 
-export async function notifyEventMembers<Payload extends Record<string, unknown>>(
-  eventId: string,
-  type: string,
-  payload: Payload,
-) {
+export async function notifyEventMembers(eventId: string, type: string, payload: NotificationPayload) {
   const memberships = await prisma.eventMembership.findMany({
     where: { eventId },
     select: { userId: true },

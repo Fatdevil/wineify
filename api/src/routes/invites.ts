@@ -14,7 +14,7 @@ const createInviteSchema = z
       .transform((value) => new Date(value))
       .optional(),
     maxUses: z
-      .number({ coerce: true })
+      .coerce.number()
       .int({ message: 'maxUses must be an integer.' })
       .positive({ message: 'maxUses must be greater than zero.' })
       .optional(),

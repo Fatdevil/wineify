@@ -120,8 +120,9 @@ describe('Event invites flow', () => {
       .set('Authorization', `Bearer ${adminToken}`)
       .send();
 
+    const lastInvite = prismaMock.state.invites[prismaMock.state.invites.length - 1];
     const revokeResponse = await agent
-      .post(`/invites/${createRevoke.body.inviteId ?? prismaMock.state.invites.at(-1)?.id}/revoke`)
+      .post(`/invites/${createRevoke.body.inviteId ?? lastInvite?.id}/revoke`)
       .set('Authorization', `Bearer ${adminToken}`)
       .send();
 
