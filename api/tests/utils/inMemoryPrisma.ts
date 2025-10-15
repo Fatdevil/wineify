@@ -21,6 +21,29 @@ interface MockSessionRecord {
   revokedAt: Date | null;
 }
 
+interface MockWalletRecord {
+  id: string;
+  type: string;
+  code: string | null;
+  userId: string | null;
+  balance: number;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+interface MockTransactionRecord {
+  id: string;
+  walletId: string;
+  type: string;
+  reason: string;
+  amount: number;
+  balance: number;
+  referenceType: string | null;
+  referenceId: string | null;
+  metadata: unknown;
+  createdAt: Date;
+}
+
 const applySelect = <T extends Record<string, any>>(record: T, select?: Record<string, boolean>) => {
   if (!select) {
     return { ...record };
@@ -63,8 +86,49 @@ export const createInMemoryPrisma = () => {
     ['abc', { id: 'abc', eventId: 'event-1' }],
   ]);
   const eventMemberships = new Map<string, { id: string; eventId: string; userId: string; role: EventRole }>();
+  const wallets = new Map<string, MockWalletRecord>();
+  const transactions: MockTransactionRecord[] = [];
 
-  const prisma = {
+  const findWalletByWhere = (where: any): MockWalletRecord | null => {
+    if (!where) {
+      return null;
+    }
+
+    if (where.id && wallets.has(where.id)) {
+      return wallets.get(where.id)!;
+    }
+
+    if (where.userId) {
+      return Array.from(wallets.values()).find((wallet) => wallet.userId === where.userId) ?? null;
+    }
+
+    if (where.code) {
+      return Array.from(wallets.values()).find((wallet) => wallet.code === where.code) ?? null;
+    }
+
+    return null;
+  };
+
+  const toNumber = (value: unknown): number => {
+    if (typeof value === 'number') {
+      return value;
+    }
+
+    if (value && typeof (value as any).toNumber === 'function') {
+      return (value as any).toNumber();
+    }
+
+    if (value && typeof (value as any).toString === 'function') {
+      const parsed = Number((value as any).toString());
+      return Number.isNaN(parsed) ? 0 : parsed;
+    }
+
+    const parsed = Number(value ?? 0);
+    return Number.isNaN(parsed) ? 0 : parsed;
+  };
+
+  const prisma: any = {
+    $transaction: async (callback: (tx: typeof prisma) => Promise<any>) => callback(prisma),
     user: {
       findUnique: async ({ where, select }: any) => {
         const { id, email } = where ?? {};
@@ -215,6 +279,104 @@ export const createInMemoryPrisma = () => {
         return records.map((record) => applySelect(record, select));
       },
     },
+    wallet: {
+      findUnique: async ({ where }: any) => {
+        const record = findWalletByWhere(where);
+        return record ? { ...record } : null;
+      },
+      upsert: async ({ where, create, update }: any) => {
+        const existing = findWalletByWhere(where);
+
+        if (existing) {
+          const updated: MockWalletRecord = {
+            ...existing,
+            ...update,
+            balance: update?.balance ? toNumber(update.balance) : existing.balance,
+            updatedAt: new Date(),
+          };
+          wallets.set(updated.id, updated);
+          return { ...updated };
+        }
+
+        const id = create.id ?? randomUUID();
+        const now = new Date();
+        const record: MockWalletRecord = {
+          id,
+          type: create.type ?? 'USER',
+          code: create.code ?? null,
+          userId: create.userId ?? null,
+          balance: toNumber(create.balance ?? 0),
+          createdAt: create.createdAt ?? now,
+          updatedAt: create.updatedAt ?? now,
+        };
+        wallets.set(id, record);
+        return { ...record };
+      },
+      update: async ({ where, data }: any) => {
+        const existing = findWalletByWhere(where);
+
+        if (!existing) {
+          throw new Error('Wallet not found.');
+        }
+
+        const updated: MockWalletRecord = {
+          ...existing,
+          ...data,
+          balance: data?.balance ? toNumber(data.balance) : existing.balance,
+          updatedAt: data?.updatedAt ?? new Date(),
+        };
+
+        wallets.set(updated.id, updated);
+
+        return { ...updated };
+      },
+    },
+    transaction: {
+      create: async ({ data }: any) => {
+        const id = data.id ?? randomUUID();
+        const record: MockTransactionRecord = {
+          id,
+          walletId: data.walletId,
+          type: data.type,
+          reason: data.reason,
+          amount: toNumber(data.amount),
+          balance: toNumber(data.balance),
+          referenceType: data.referenceType ?? null,
+          referenceId: data.referenceId ?? null,
+          metadata: data.metadata ?? null,
+          createdAt: data.createdAt ?? new Date(),
+        };
+
+        transactions.push(record);
+
+        return { ...record };
+      },
+      findMany: async ({ where, orderBy, take, skip }: any = {}) => {
+        let records = transactions.filter((transaction) => {
+          if (!where?.walletId) {
+            return true;
+          }
+
+          return transaction.walletId === where.walletId;
+        });
+
+        if (orderBy?.createdAt === 'desc') {
+          records = records.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+        } else if (orderBy?.createdAt === 'asc') {
+          records = records.sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
+        }
+
+        if (typeof skip === 'number' && skip > 0) {
+          records = records.slice(skip);
+        }
+
+        if (typeof take === 'number' && take >= 0) {
+          records = records.slice(0, take);
+        }
+
+        return records.map((record) => ({ ...record }));
+      },
+    },
     subCompetition: {
       findUnique: async ({ where }: any) => {
         const record = subCompetitions.get(where?.id);
@@ -258,6 +420,8 @@ export const createInMemoryPrisma = () => {
       sessions.clear();
       eventMemberships.clear();
       subCompetitions.clear();
+      wallets.clear();
+      transactions.length = 0;
       auditLogs.length = 0;
       subCompetitions.set('abc', { id: 'abc', eventId: 'event-1' });
     },
@@ -267,6 +431,12 @@ export const createInMemoryPrisma = () => {
       },
       get sessions() {
         return sessions;
+      },
+      get wallets() {
+        return wallets;
+      },
+      get transactions() {
+        return transactions;
       },
       get eventMemberships() {
         return eventMemberships;

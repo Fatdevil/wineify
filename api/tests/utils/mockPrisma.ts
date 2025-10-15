@@ -104,6 +104,29 @@ interface NotificationRecord {
   createdAt: Date;
 }
 
+interface WalletRecord {
+  id: string;
+  type: string;
+  code: string | null;
+  userId: string | null;
+  balance: Prisma.Decimal;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+interface TransactionRecord {
+  id: string;
+  walletId: string;
+  type: string;
+  reason: string;
+  amount: Prisma.Decimal;
+  balance: Prisma.Decimal;
+  referenceType: string | null;
+  referenceId: string | null;
+  metadata: any;
+  createdAt: Date;
+}
+
 export interface MockDatabase {
   users: UserRecord[];
   events: EventRecord[];
@@ -117,6 +140,8 @@ export interface MockDatabase {
   achievements: AchievementRecord[];
   userAchievements: UserAchievementRecord[];
   notifications: NotificationRecord[];
+  wallets: WalletRecord[];
+  transactions: TransactionRecord[];
 }
 
 function createResultId(index: number) {
@@ -130,6 +155,22 @@ function createSettlementId(index: number) {
 function createStatsId(index: number) {
   return `stats-${index + 1}`;
 }
+
+function createWalletId(index: number) {
+  return `wallet-${index + 1}`;
+}
+
+function createTransactionId(index: number) {
+  return `txn-${index + 1}`;
+}
+
+const toDecimal = (value: Prisma.Decimal | number | string): Prisma.Decimal => {
+  if (value instanceof Prisma.Decimal) {
+    return value;
+  }
+
+  return new Prisma.Decimal(value);
+};
 
 export function createMockPrisma() {
   const db: MockDatabase = {
@@ -145,6 +186,28 @@ export function createMockPrisma() {
     achievements: [],
     userAchievements: [],
     notifications: [],
+    wallets: [],
+    transactions: [],
+  };
+
+  const findWalletByWhere = (where: any): WalletRecord | null => {
+    if (!where) {
+      return null;
+    }
+
+    if (where.id) {
+      return db.wallets.find((wallet) => wallet.id === where.id) ?? null;
+    }
+
+    if (where.userId) {
+      return db.wallets.find((wallet) => wallet.userId === where.userId) ?? null;
+    }
+
+    if (where.code) {
+      return db.wallets.find((wallet) => wallet.code === where.code) ?? null;
+    }
+
+    return null;
   };
 
   const prismaMock: Record<string, any> = {
@@ -162,6 +225,144 @@ export function createMockPrisma() {
       }
 
       throw new Error('Unsupported transaction input in mock Prisma client.');
+    },
+    wallet: {
+      findUnique: async ({ where }: any) => {
+        const record = findWalletByWhere(where);
+        return record ? { ...record } : null;
+      },
+      upsert: async ({ where, create, update }: any) => {
+        const existing = findWalletByWhere(where);
+
+        if (existing) {
+          if (update?.balance !== undefined) {
+            existing.balance = toDecimal(update.balance);
+          }
+          if (update?.type) {
+            existing.type = update.type;
+          }
+          if (update?.code !== undefined) {
+            existing.code = update.code ?? null;
+          }
+          if (update?.userId !== undefined) {
+            existing.userId = update.userId ?? null;
+          }
+          existing.updatedAt = update?.updatedAt ?? new Date();
+          return { ...existing };
+        }
+
+        const record: WalletRecord = {
+          id: create.id ?? createWalletId(db.wallets.length),
+          type: create.type ?? 'USER',
+          code: create.code ?? null,
+          userId: create.userId ?? null,
+          balance: toDecimal(create.balance ?? 0),
+          createdAt: create.createdAt ?? new Date(),
+          updatedAt: create.updatedAt ?? new Date(),
+        };
+
+        db.wallets.push(record);
+
+        return { ...record };
+      },
+      update: async ({ where, data }: any) => {
+        const existing = findWalletByWhere(where);
+
+        if (!existing) {
+          throw new Error('Wallet not found.');
+        }
+
+        if (data?.balance !== undefined) {
+          existing.balance = toDecimal(data.balance);
+        }
+        if (data?.type) {
+          existing.type = data.type;
+        }
+        if (data?.code !== undefined) {
+          existing.code = data.code ?? null;
+        }
+        if (data?.userId !== undefined) {
+          existing.userId = data.userId ?? null;
+        }
+        existing.updatedAt = data?.updatedAt ?? new Date();
+
+        return { ...existing };
+      },
+      findMany: async ({ where, orderBy, take, skip }: any = {}) => {
+        let records = db.wallets.slice();
+
+        if (where?.id?.in) {
+          const set = new Set(where.id.in);
+          records = records.filter((wallet) => set.has(wallet.id));
+        }
+
+        if (where?.type) {
+          records = records.filter((wallet) => wallet.type === where.type);
+        }
+
+        if (where?.userId) {
+          records = records.filter((wallet) => wallet.userId === where.userId);
+        }
+
+        if (orderBy?.createdAt === 'desc') {
+          records.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+        } else if (orderBy?.createdAt === 'asc') {
+          records.sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
+        }
+
+        if (typeof skip === 'number' && skip > 0) {
+          records = records.slice(skip);
+        }
+
+        if (typeof take === 'number' && take >= 0) {
+          records = records.slice(0, take);
+        }
+
+        return records.map((record) => ({ ...record }));
+      },
+    },
+    transaction: {
+      create: async ({ data }: any) => {
+        const record: TransactionRecord = {
+          id: data.id ?? createTransactionId(db.transactions.length),
+          walletId: data.walletId,
+          type: data.type,
+          reason: data.reason,
+          amount: toDecimal(data.amount ?? 0),
+          balance: toDecimal(data.balance ?? 0),
+          referenceType: data.referenceType ?? null,
+          referenceId: data.referenceId ?? null,
+          metadata: data.metadata ?? null,
+          createdAt: data.createdAt ?? new Date(),
+        };
+
+        db.transactions.push(record);
+
+        return { ...record };
+      },
+      findMany: async ({ where, orderBy, take, skip }: any = {}) => {
+        let records = db.transactions.slice();
+
+        if (where?.walletId) {
+          records = records.filter((txn) => txn.walletId === where.walletId);
+        }
+
+        if (orderBy?.createdAt === 'desc') {
+          records.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+        } else if (orderBy?.createdAt === 'asc') {
+          records.sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
+        }
+
+        if (typeof skip === 'number' && skip > 0) {
+          records = records.slice(skip);
+        }
+
+        if (typeof take === 'number' && take >= 0) {
+          records = records.slice(0, take);
+        }
+
+        return records.map((record) => ({ ...record }));
+      },
     },
     user: {
       findMany: async ({ where, select }: any) => {

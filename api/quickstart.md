@@ -85,6 +85,20 @@ All `/stats`, `/bets`, `/results`, and `/settlements` endpoints now require a va
 - `GET /api/achievements` — lists every possible achievement and XP reward.
 - `GET /api/achievements/mine?userId=USER_ID` — returns the caller's unlocked achievements with timestamps.
 
+## Economy & Wallets
+
+Every newly registered account automatically provisions a personal wallet and transaction ledger. Use the following authenticated
+routes to surface balances in clients:
+
+- `GET /api/wallet` — returns the current wallet balance plus the five most recent ledger entries.
+- `GET /api/wallet/history?limit=50&offset=0` — paginated transaction history with credits/debits, references, and running
+  balances.
+- `GET /api/admin/house` — administrator-only view of the global HOUSE wallet, including house-cut deposits.
+
+Transactions are appended whenever bets are placed, winnings are settled, refunds are issued, or house fees are collected. Wallet
+service helpers (`recordBetPlacement`, `recordBetPayout`, `recordBetRefund`, and `recordHouseCut`) can be reused inside new
+modules to keep the ledger consistent.
+
 ## Private Events & Invites
 
 Events are private by default. Users must hold an active membership to read event data, place bets, or view results.

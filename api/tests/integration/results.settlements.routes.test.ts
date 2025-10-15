@@ -25,12 +25,16 @@ const resetDb = () => {
   db.results.length = 0;
   db.settlements.length = 0;
   db.notifications.length = 0;
+  db.wallets.length = 0;
+  db.transactions.length = 0;
 };
 
 const seedBaseData = () => {
   db.users.push(
     { id: 'admin-1', email: 'admin@example.com', role: Role.ADMIN, isBanned: false, createdAt: new Date('2024-01-01') },
     { id: 'user-1', email: 'user@example.com', role: Role.USER, isBanned: false, createdAt: new Date('2024-01-02') },
+    { id: 'user-2', email: 'member2@example.com', role: Role.USER, isBanned: false, createdAt: new Date('2024-01-03') },
+    { id: 'user-3', email: 'member3@example.com', role: Role.USER, isBanned: false, createdAt: new Date('2024-01-04') },
   );
   db.events.push({ id: 'event-1', name: 'Championship', houseCut: 0.05 });
   db.eventMemberships.push(

@@ -7,6 +7,7 @@ import {
 } from '@prisma/client';
 import { prisma } from '../../lib/prisma';
 import { computePayouts, PayoutComputation } from './payouts.service';
+import { recordBetPayout, recordHouseCut } from '../../services/wallet.service';
 
 export interface RecordResultResponse {
   eventId: string;
@@ -106,6 +107,43 @@ export async function recordResult(
 
         return settlement;
       }),
+    );
+
+    const houseCutDecimal = new Prisma.Decimal(computationResult.houseCut ?? 0);
+    const totalPoolDecimal = new Prisma.Decimal(computationResult.totalPool ?? 0);
+    const rawHouseCutAmount = totalPoolDecimal.mul(houseCutDecimal);
+    const normalizedHouseCut = new Prisma.Decimal(rawHouseCutAmount.toFixed(2));
+
+    if (normalizedHouseCut.gt(ZERO)) {
+      await recordHouseCut(normalizedHouseCut, tx, {
+        referenceType: 'EVENT',
+        referenceId: computationResult.eventId,
+        metadata: {
+          subCompetitionId,
+          resultId: computationResult.resultId,
+        },
+      });
+    }
+
+    await Promise.all(
+      computationResult.payouts
+        .filter((payout) => payout.payout > 0)
+        .map((payout) =>
+          recordBetPayout(
+            payout.userId,
+            payout.payout,
+            {
+              referenceType: 'BET',
+              referenceId: payout.betId,
+              metadata: {
+                subCompetitionId,
+                resultId: computationResult.resultId,
+                participantId: payout.participantId,
+              },
+            },
+            tx,
+          ),
+        ),
     );
 
     return { computation: computationResult, settlements: settlementsCreated };

@@ -13,8 +13,10 @@ import achievementsRouter from './routes/achievements';
 import invitesRouter from './routes/invites';
 import membershipsRouter from './routes/memberships';
 import notificationsRouter from './routes/notifications';
+import walletRouter from './routes/wallet';
 import adminAuditRouter from './routes/admin/audit';
 import adminUsersRouter from './routes/admin/users';
+import adminHouseRouter from './routes/admin/house';
 import { env } from './config/env';
 
 const limiter = rateLimit({
@@ -53,7 +55,9 @@ app.use('/achievements', achievementsRouter);
 app.use(invitesRouter);
 app.use(membershipsRouter);
 app.use(notificationsRouter);
+app.use('/wallet', walletRouter);
 app.use('/admin/audit', adminAuditRouter);
 app.use('/admin/users', adminUsersRouter);
+app.use('/admin/house', adminHouseRouter);
 
 export { app };

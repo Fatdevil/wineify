@@ -25,6 +25,7 @@ import {
   revokeAll,
 } from '../services/auth.service';
 import { requireAuth } from '../middleware/requireAuth';
+import { ensureUserWallet } from '../services/wallet.service';
 
 const router = Router();
 
@@ -62,6 +63,8 @@ router.post('/register', validateBody(registerSchema), async (req, res) => {
       role: Role.USER,
     },
   });
+
+  await ensureUserWallet(user.id);
 
   const accessToken = signAccessToken({ sub: user.id, role: user.role });
   const { refreshToken } = await mintRefreshToken(user.id, sessionContext(req));
