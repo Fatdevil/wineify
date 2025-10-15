@@ -4,6 +4,10 @@ import request from 'supertest';
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createTestPrismaClient } from '../utils/testPrismaClient';
 
+type ResultsModule = typeof import('../../src/modules/results/results.service');
+type SettlementsModule = typeof import('../../src/modules/settlements/settlements.service');
+type StatsModule = typeof import('../../src/services/stats.service');
+
 const prismaMock = createTestPrismaClient({
   users: [
     { id: 'user-admin', email: 'admin@example.com' },
@@ -33,44 +37,87 @@ vi.mock('../../src/lib/prisma', () => ({
   prisma: prismaMock.prisma,
 }));
 
-vi.mock('../../src/modules/results/results.service', async (original) => {
-  const actual = await original();
-  return {
-    ...actual,
-    recordResult: vi.fn().mockResolvedValue({
-      eventId: 'event-1',
-      resultId: 'result-1',
-      totalPool: 0,
-      payouts: [],
-      settlements: [],
-    }),
-  };
-});
+const recordResultMock = vi.fn<ResultsModule['recordResult']>().mockResolvedValue({
+  eventId: 'event-1',
+  resultId: 'result-1',
+  totalPool: 0,
+  payouts: [],
+  settlements: [],
+} as Awaited<ReturnType<ResultsModule['recordResult']>>);
 
-vi.mock('../../src/modules/settlements/settlements.service', async (original) => {
-  const actual = await original();
-  return {
-    ...actual,
-    generateSettlements: vi.fn().mockResolvedValue({
-      eventId: 'event-1',
-      totalPool: 0,
-      payouts: [
-        { userId: 'user-one', subCompetitionId: 'sub-1', resultId: 'result-1' },
-        { userId: 'user-two', subCompetitionId: 'sub-1', resultId: 'result-1' },
-      ],
-      settlements: [],
-    }),
-  };
-});
+const generateSettlementsMock = vi
+  .fn<SettlementsModule['generateSettlements']>()
+  .mockResolvedValue({
+    eventId: 'event-1',
+    totalPool: 0,
+    payouts: [
+      {
+        betId: 'bet-1',
+        userId: 'user-one',
+        subCompetitionId: 'sub-1',
+        resultId: 'result-1',
+        participantId: 'participant-1',
+        isWinner: true,
+        stake: 0,
+        payout: 0,
+      },
+      {
+        betId: 'bet-2',
+        userId: 'user-two',
+        subCompetitionId: 'sub-1',
+        resultId: 'result-1',
+        participantId: 'participant-1',
+        isWinner: true,
+        stake: 0,
+        payout: 0,
+      },
+    ],
+    settlements: [],
+  } as Awaited<ReturnType<SettlementsModule['generateSettlements']>>);
 
-vi.mock('../../src/services/stats.service', async (original) => {
-  const actual = await original();
-  return {
-    ...actual,
-    updateStatsForSettlement: vi.fn().mockResolvedValue({ id: 'stats-1', userId: 'user-one' } as any),
-    getUserStats: vi.fn().mockResolvedValue({ userId: 'user-one', totalWins: 0 } as any),
-  };
-});
+const updateStatsForSettlementMock = vi.fn<StatsModule['updateStatsForSettlement']>().mockResolvedValue({
+  id: 'stats-1',
+  userId: 'user-one',
+  totalWins: 0,
+  totalLosses: 0,
+  totalUnits: 0,
+  streak: 0,
+  xp: 0,
+  level: 1,
+  nextLevelXp: 100,
+  lastUpdated: new Date('2024-01-01T00:00:00Z'),
+} as Awaited<ReturnType<StatsModule['updateStatsForSettlement']>>);
+
+const getUserStatsMock = vi.fn<StatsModule['getUserStats']>().mockResolvedValue({
+  userId: 'user-one',
+  username: 'user-one@example.com',
+  totalWins: 0,
+  totalLosses: 0,
+  totalUnits: 0,
+  streak: 0,
+  xp: 0,
+  level: 1,
+  nextLevelXp: 100,
+  xpIntoLevel: 0,
+  xpForNextLevel: 100,
+  currentLevelFloorXp: 0,
+} as Awaited<ReturnType<StatsModule['getUserStats']>>);
+
+vi.mock('../../src/modules/results/results.service', () => ({
+  __esModule: true,
+  recordResult: recordResultMock,
+}));
+
+vi.mock('../../src/modules/settlements/settlements.service', () => ({
+  __esModule: true,
+  generateSettlements: generateSettlementsMock,
+}));
+
+vi.mock('../../src/services/stats.service', () => ({
+  __esModule: true,
+  updateStatsForSettlement: updateStatsForSettlementMock,
+  getUserStats: getUserStatsMock,
+}));
 
 let app: Express;
 let signAccessToken: typeof import('../../src/services/auth.service').signAccessToken;
@@ -87,7 +134,13 @@ beforeEach(() => {
     { id: 'user-one', email: 'one@example.com' },
     { id: 'user-two', email: 'two@example.com' },
   );
-  prismaMock.state.events.push({ id: 'event-1', name: 'Cup', description: null, subCompetitionIds: ['sub-1'], participantIds: [] });
+  prismaMock.state.events.push({
+    id: 'event-1',
+    name: 'Cup',
+    description: null,
+    subCompetitionIds: ['sub-1'],
+    participantIds: [],
+  });
   prismaMock.state.subCompetitions.push({ id: 'sub-1', eventId: 'event-1', name: 'Match 1' });
   prismaMock.state.memberships.push(
     { id: 'mem-1', eventId: 'event-1', userId: 'user-admin', role: EventRole.ADMIN, createdAt: new Date('2024-01-01') },

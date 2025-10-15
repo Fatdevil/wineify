@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { EventRole, SettlementStatus } from '@prisma/client';
+import { EventRole, Prisma, SettlementStatus } from '@prisma/client';
 
 type UserRecord = { id: string; email: string };
 type EventRecord = {
@@ -46,7 +46,7 @@ type NotificationRecord = {
   id: string;
   userId: string;
   type: string;
-  payload: Record<string, unknown>;
+  payload: Prisma.JsonValue;
   readAt: Date | null;
   createdAt: Date;
 };
@@ -104,8 +104,22 @@ export function createTestPrismaClient(initial: Partial<TestPrismaState> = {}) {
     settlements: initial.settlements ? [...initial.settlements] : [],
   };
 
-  const prisma = {
-    $transaction: async <T>(fn: (client: typeof prisma) => Promise<T>): Promise<T> => fn(prisma),
+  const prisma: any = {
+    $transaction: async <T>(arg: any): Promise<T> => {
+      if (typeof arg === 'function') {
+        return arg(prisma);
+      }
+
+      if (Array.isArray(arg)) {
+        const results: any[] = [];
+        for (const operation of arg) {
+          results.push(await operation);
+        }
+        return results as T;
+      }
+
+      throw new Error('Unsupported transaction input in test Prisma client.');
+    },
     event: {
       findMany: async ({ where, include, orderBy }: any = {}) => {
         let records = state.events.slice();
@@ -290,7 +304,29 @@ export function createTestPrismaClient(initial: Partial<TestPrismaState> = {}) {
         if (!record) {
           throw new Error('Invite not found');
         }
-        Object.assign(record, data);
+
+        if (data.maxUses !== undefined) {
+          record.maxUses = data.maxUses;
+        }
+
+        if (data.expiresAt !== undefined) {
+          record.expiresAt = data.expiresAt;
+        }
+
+        if (data.revokedAt !== undefined) {
+          record.revokedAt = data.revokedAt;
+        }
+
+        if (data.usedCount) {
+          if (typeof data.usedCount.increment === 'number') {
+            record.usedCount += data.usedCount.increment;
+          } else if (typeof data.usedCount.decrement === 'number') {
+            record.usedCount -= data.usedCount.decrement;
+          } else if (typeof data.usedCount.set === 'number') {
+            record.usedCount = data.usedCount.set;
+          }
+        }
+
         return { ...record };
       },
     },

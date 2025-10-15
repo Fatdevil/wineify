@@ -4,6 +4,8 @@ import request from 'supertest';
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createTestPrismaClient } from '../utils/testPrismaClient';
 
+type ResultsModule = typeof import('../../src/modules/results/results.service');
+
 const prismaMock = createTestPrismaClient({
   users: [
     { id: 'user-admin', email: 'admin@example.com' },
@@ -29,20 +31,24 @@ vi.mock('../../src/lib/prisma', () => ({
   prisma: prismaMock.prisma,
 }));
 
+const recordResultMock = vi.fn<ResultsModule['recordResult']>().mockResolvedValue({
+  eventId: 'event-1',
+  resultId: 'result-1',
+  totalPool: 0,
+  payouts: [],
+  settlements: [],
+} as Awaited<ReturnType<ResultsModule['recordResult']>>);
+
+vi.mock('../../src/modules/results/results.service', () => ({
+  __esModule: true,
+  recordResult: recordResultMock,
+}));
+
 let app: Express;
 let signAccessToken: typeof import('../../src/services/auth.service').signAccessToken;
-let recordResultSpy: ReturnType<typeof vi.spyOn>;
 
 beforeAll(async () => {
   ({ signAccessToken } = await import('../../src/services/auth.service'));
-  const resultsModule = await import('../../src/modules/results/results.service');
-  recordResultSpy = vi.spyOn(resultsModule, 'recordResult').mockResolvedValue({
-    eventId: 'event-1',
-    resultId: 'result-1',
-    totalPool: 0,
-    payouts: [],
-    settlements: [],
-  });
   ({ app } = await import('../../src/app'));
 });
 
@@ -59,7 +65,7 @@ beforeEach(() => {
     { id: 'membership-1', eventId: 'event-1', userId: 'user-admin', role: EventRole.ADMIN, createdAt: new Date('2024-01-01') },
     { id: 'membership-2', eventId: 'event-1', userId: 'user-member', role: EventRole.MEMBER, createdAt: new Date('2024-01-02') },
   );
-  recordResultSpy.mockClear();
+  recordResultMock.mockClear();
 });
 
 describe('Event access control', () => {
@@ -91,7 +97,7 @@ describe('Event access control', () => {
       .send({ subCompetitionId: 'sub-1', winningEntryId: 'participant-1' });
 
     expect(adminResponse.status).toBe(201);
-    expect(recordResultSpy).toHaveBeenCalledTimes(1);
+    expect(recordResultMock).toHaveBeenCalledTimes(1);
 
     const memberResponse = await agent
       .post('/results')
@@ -99,6 +105,6 @@ describe('Event access control', () => {
       .send({ subCompetitionId: 'sub-1', winningEntryId: 'participant-1' });
 
     expect(memberResponse.status).toBe(403);
-    expect(recordResultSpy).toHaveBeenCalledTimes(1);
+    expect(recordResultMock).toHaveBeenCalledTimes(1);
   });
 });

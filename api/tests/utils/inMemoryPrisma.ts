@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { Role } from '@prisma/client';
+import { EventRole, Role } from '@prisma/client';
 
 interface MockUserRecord {
   id: string;
@@ -49,6 +49,10 @@ const matchesWhere = (record: MockSessionRecord, where: Record<string, unknown>)
 export const createInMemoryPrisma = () => {
   const users = new Map<string, MockUserRecord>();
   const sessions = new Map<string, MockSessionRecord>();
+  const subCompetitions = new Map<string, { id: string; eventId: string }>([
+    ['abc', { id: 'abc', eventId: 'event-1' }],
+  ]);
+  const eventMemberships = new Map<string, { id: string; eventId: string; userId: string; role: EventRole }>();
 
   const prisma = {
     user: {
@@ -150,6 +154,40 @@ export const createInMemoryPrisma = () => {
         return { count };
       },
     },
+    subCompetition: {
+      findUnique: async ({ where }: any) => {
+        const record = subCompetitions.get(where?.id);
+        return record ? { ...record } : null;
+      },
+    },
+    eventMembership: {
+      findUnique: async ({ where }: any) => {
+        if (where?.id) {
+          const record = eventMemberships.get(where.id);
+          return record ? { ...record } : null;
+        }
+
+        if (where?.eventId_userId) {
+          const key = `${where.eventId_userId.eventId}:${where.eventId_userId.userId}`;
+          const record = eventMemberships.get(key);
+          return record ? { ...record } : null;
+        }
+
+        return null;
+      },
+      create: async ({ data }: any) => {
+        const id = data.id ?? randomUUID();
+        const record = {
+          id,
+          eventId: data.eventId,
+          userId: data.userId,
+          role: (data.role ?? EventRole.MEMBER) as EventRole,
+        };
+        eventMemberships.set(id, record);
+        eventMemberships.set(`${record.eventId}:${record.userId}`, record);
+        return { ...record };
+      },
+    },
   } as const;
 
   return {
@@ -157,6 +195,9 @@ export const createInMemoryPrisma = () => {
     reset: () => {
       users.clear();
       sessions.clear();
+      eventMemberships.clear();
+      subCompetitions.clear();
+      subCompetitions.set('abc', { id: 'abc', eventId: 'event-1' });
     },
     state: {
       get users() {
@@ -164,6 +205,12 @@ export const createInMemoryPrisma = () => {
       },
       get sessions() {
         return sessions;
+      },
+      get eventMemberships() {
+        return eventMemberships;
+      },
+      get subCompetitions() {
+        return subCompetitions;
       },
     },
   };

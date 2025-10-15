@@ -1,6 +1,6 @@
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import request from 'supertest';
-import { Prisma, BetStatus, SubCompStatus, Role } from '@prisma/client';
+import { Prisma, BetStatus, SubCompStatus, Role, EventRole } from '@prisma/client';
 import { createMockPrisma } from '../utils/mockPrisma';
 
 const mockPrisma = createMockPrisma();
@@ -18,15 +18,21 @@ let signAccessToken: typeof import('../../src/services/auth.service')['signAcces
 const resetDb = () => {
   db.users.length = 0;
   db.events.length = 0;
+  db.eventMemberships.length = 0;
   db.subCompetitions.length = 0;
   db.participants.length = 0;
   db.bets.length = 0;
   db.results.length = 0;
   db.settlements.length = 0;
+  db.notifications.length = 0;
 };
 
 const seedBaseData = () => {
   db.events.push({ id: 'event-1', name: 'Championship', houseCut: 0.05 });
+  db.eventMemberships.push(
+    { id: 'membership-1', eventId: 'event-1', userId: 'admin-1', role: EventRole.ADMIN, createdAt: new Date('2024-01-01') },
+    { id: 'membership-2', eventId: 'event-1', userId: 'user-1', role: EventRole.MEMBER, createdAt: new Date('2024-01-02') },
+  );
   db.subCompetitions.push({ id: 'sub-1', eventId: 'event-1', status: SubCompStatus.ACTIVE, name: 'Qualifier' });
   db.participants.push(
     { id: 'participant-1', subCompetitionId: 'sub-1', name: 'Sprinter' },
