@@ -1,7 +1,14 @@
 import { randomUUID } from 'node:crypto';
-import { EventRole, Prisma, SettlementStatus } from '@prisma/client';
+import { EventRole, Prisma, Role, SettlementStatus } from '@prisma/client';
 
-type UserRecord = { id: string; email: string };
+type UserRecord = {
+  id: string;
+  email: string;
+  role?: Role;
+  passwordHash?: string;
+  isBanned?: boolean;
+  createdAt?: Date;
+};
 type EventRecord = {
   id: string;
   name: string;
@@ -65,6 +72,26 @@ type SettlementRecord = {
   settledAt: Date | null;
 };
 
+type SessionRecord = {
+  id: string;
+  userId: string;
+  refreshHash: string;
+  userAgent: string | null;
+  ip: string | null;
+  createdAt: Date;
+  revokedAt: Date | null;
+};
+
+type AuditLogRecord = {
+  id: string;
+  userId: string | null;
+  eventType: string;
+  targetId: string | null;
+  ip: string | null;
+  meta: Prisma.JsonValue | null;
+  createdAt: Date;
+};
+
 export interface TestPrismaState {
   users: UserRecord[];
   events: EventRecord[];
@@ -75,6 +102,8 @@ export interface TestPrismaState {
   notifications: NotificationRecord[];
   bets: BetRecord[];
   settlements: SettlementRecord[];
+  sessions: SessionRecord[];
+  auditLogs: AuditLogRecord[];
 }
 
 const defaultState: TestPrismaState = {
@@ -87,6 +116,8 @@ const defaultState: TestPrismaState = {
   notifications: [],
   bets: [],
   settlements: [],
+  sessions: [],
+  auditLogs: [],
 };
 
 export function createTestPrismaClient(initial: Partial<TestPrismaState> = {}) {
@@ -102,6 +133,110 @@ export function createTestPrismaClient(initial: Partial<TestPrismaState> = {}) {
     notifications: initial.notifications ? [...initial.notifications] : [],
     bets: initial.bets ? [...initial.bets] : [],
     settlements: initial.settlements ? [...initial.settlements] : [],
+    sessions: initial.sessions ? [...initial.sessions] : [],
+    auditLogs: initial.auditLogs ? [...initial.auditLogs] : [],
+  };
+
+  const normalizeUser = (record: UserRecord) => ({
+    id: record.id,
+    email: record.email,
+    role: record.role ?? Role.USER,
+    passwordHash: record.passwordHash ?? '',
+    isBanned: record.isBanned ?? false,
+    createdAt: record.createdAt ?? new Date('2024-01-01T00:00:00Z'),
+  });
+
+  const normalizeSession = (record: SessionRecord) => ({
+    id: record.id,
+    userId: record.userId,
+    refreshHash: record.refreshHash,
+    userAgent: record.userAgent,
+    ip: record.ip,
+    createdAt: record.createdAt,
+    revokedAt: record.revokedAt,
+  });
+
+  const normalizeAuditLog = (record: AuditLogRecord) => ({
+    id: record.id,
+    userId: record.userId,
+    eventType: record.eventType,
+    targetId: record.targetId,
+    ip: record.ip,
+    meta: record.meta,
+    createdAt: record.createdAt,
+  });
+
+  const mapSessionsForUser = (userId: string, config: any) => {
+    if (!config) {
+      return [];
+    }
+
+    let records = state.sessions.filter((session) => session.userId === userId);
+
+    if (config.where?.revokedAt === null) {
+      records = records.filter((session) => session.revokedAt === null);
+    }
+
+    if (config.orderBy?.createdAt === 'desc') {
+      records = records.slice().sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+    } else if (config.orderBy?.createdAt === 'asc') {
+      records = records.slice().sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
+    }
+
+    return records.map((record) => {
+      const normalized = normalizeSession(record);
+
+      if (!config.select) {
+        return { ...normalized };
+      }
+
+      const result: Record<string, unknown> = {};
+      Object.entries(config.select).forEach(([key, value]) => {
+        if (value) {
+          result[key] = (normalized as any)[key];
+        }
+      });
+      return result;
+    });
+  };
+
+  const selectUser = (record: UserRecord, select?: any) => {
+    const normalized = normalizeUser(record);
+
+    if (!select) {
+      return { ...normalized };
+    }
+
+    const { sessions, ...scalarSelect } = select;
+    const result: Record<string, unknown> = {};
+
+    Object.entries(scalarSelect).forEach(([key, value]) => {
+      if (value && key in normalized) {
+        result[key] = (normalized as any)[key];
+      }
+    });
+
+    if (sessions) {
+      result.sessions = mapSessionsForUser(record.id, sessions);
+    }
+
+    return result;
+  };
+
+  const selectSession = (record: SessionRecord, select?: any) => {
+    const normalized = normalizeSession(record);
+
+    if (!select) {
+      return { ...normalized };
+    }
+
+    const result: Record<string, unknown> = {};
+    Object.entries(select).forEach(([key, value]) => {
+      if (value && key in normalized) {
+        result[key] = (normalized as any)[key];
+      }
+    });
+    return result;
   };
 
   const prisma: any = {
@@ -119,6 +254,238 @@ export function createTestPrismaClient(initial: Partial<TestPrismaState> = {}) {
       }
 
       throw new Error('Unsupported transaction input in test Prisma client.');
+    },
+    user: {
+      findUnique: async ({ where, select }: any) => {
+        let record: UserRecord | undefined;
+
+        if (where?.id) {
+          record = state.users.find((user) => user.id === where.id);
+        }
+
+        if (!record && where?.email) {
+          record = state.users.find((user) => user.email === where.email);
+        }
+
+        if (!record) {
+          return null;
+        }
+
+        return selectUser(record, select);
+      },
+      findMany: async ({ where, select, orderBy }: any = {}) => {
+        let records = state.users.slice();
+
+        if (where?.role) {
+          records = records.filter((user) => (user.role ?? Role.USER) === where.role);
+        }
+
+        if (orderBy?.createdAt === 'asc') {
+          records = records.slice().sort((a, b) => {
+            const aDate = (a.createdAt ?? new Date('2024-01-01T00:00:00Z')).getTime();
+            const bDate = (b.createdAt ?? new Date('2024-01-01T00:00:00Z')).getTime();
+            return aDate - bDate;
+          });
+        } else if (orderBy?.createdAt === 'desc') {
+          records = records.slice().sort((a, b) => {
+            const aDate = (a.createdAt ?? new Date('2024-01-01T00:00:00Z')).getTime();
+            const bDate = (b.createdAt ?? new Date('2024-01-01T00:00:00Z')).getTime();
+            return bDate - aDate;
+          });
+        }
+
+        return records.map((record) => selectUser(record, select));
+      },
+      create: async ({ data, select }: any) => {
+        const record: UserRecord = {
+          id: data.id ?? randomUUID(),
+          email: data.email,
+          role: data.role ?? Role.USER,
+          passwordHash: data.passwordHash,
+          isBanned: data.isBanned ?? false,
+          createdAt: data.createdAt ?? new Date(),
+        };
+
+        state.users.push(record);
+
+        return selectUser(record, select);
+      },
+      update: async ({ where, data, select }: any) => {
+        const record = state.users.find((user) => user.id === where?.id);
+
+        if (!record) {
+          throw new Error('User not found');
+        }
+
+        if (data.email !== undefined) {
+          record.email = data.email;
+        }
+
+        if (data.role !== undefined) {
+          record.role = data.role;
+        }
+
+        if (data.passwordHash !== undefined) {
+          record.passwordHash = data.passwordHash;
+        }
+
+        if (data.isBanned !== undefined) {
+          record.isBanned = data.isBanned;
+        }
+
+        if (data.createdAt !== undefined) {
+          record.createdAt = data.createdAt;
+        }
+
+        return selectUser(record, select);
+      },
+    },
+    session: {
+      create: async ({ data, select }: any) => {
+        const record: SessionRecord = {
+          id: data.id ?? randomUUID(),
+          userId: data.userId,
+          refreshHash: data.refreshHash,
+          userAgent: data.userAgent ?? null,
+          ip: data.ip ?? null,
+          createdAt: data.createdAt ?? new Date(),
+          revokedAt: data.revokedAt ?? null,
+        };
+
+        state.sessions.push(record);
+
+        return selectSession(record, select);
+      },
+      findUnique: async ({ where, select }: any) => {
+        const record = state.sessions.find((session) => session.id === where?.id);
+
+        if (!record) {
+          return null;
+        }
+
+        return selectSession(record, select);
+      },
+      update: async ({ where, data, select }: any) => {
+        const record = state.sessions.find((session) => session.id === where?.id);
+
+        if (!record) {
+          throw new Error('Session not found');
+        }
+
+        if (data.refreshHash !== undefined) {
+          record.refreshHash = data.refreshHash;
+        }
+
+        if (data.revokedAt !== undefined) {
+          record.revokedAt = data.revokedAt;
+        }
+
+        if (data.createdAt !== undefined) {
+          record.createdAt = data.createdAt;
+        }
+
+        if (data.ip !== undefined) {
+          record.ip = data.ip;
+        }
+
+        if (data.userAgent !== undefined) {
+          record.userAgent = data.userAgent;
+        }
+
+        return selectSession(record, select);
+      },
+      updateMany: async ({ where, data }: any) => {
+        let count = 0;
+
+        state.sessions.forEach((session) => {
+          if (!where || (where.id ? session.id === where.id : true)) {
+            if (where?.userId && session.userId !== where.userId) {
+              return;
+            }
+            if (where?.revokedAt === null && session.revokedAt !== null) {
+              return;
+            }
+            if (data.revokedAt !== undefined) {
+              session.revokedAt = data.revokedAt;
+            }
+            count += 1;
+          }
+        });
+
+        return { count };
+      },
+      findMany: async ({ where, select, orderBy }: any = {}) => {
+        let records = state.sessions.slice();
+
+        if (where?.userId) {
+          records = records.filter((session) => session.userId === where.userId);
+        }
+
+        if (where?.revokedAt === null) {
+          records = records.filter((session) => session.revokedAt === null);
+        }
+
+        if (orderBy?.createdAt === 'desc') {
+          records = records.slice().sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+        } else if (orderBy?.createdAt === 'asc') {
+          records = records.slice().sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
+        }
+
+        return records.map((record) => selectSession(record, select));
+      },
+    },
+    auditLog: {
+      create: async ({ data, select }: any) => {
+        const record: AuditLogRecord = {
+          id: data.id ?? randomUUID(),
+          userId: data.userId ?? null,
+          eventType: data.eventType,
+          targetId: data.targetId ?? null,
+          ip: data.ip ?? null,
+          meta: data.meta ?? null,
+          createdAt: data.createdAt ?? new Date(),
+        };
+
+        state.auditLogs.push(record);
+
+        const normalized = normalizeAuditLog(record);
+
+        if (!select) {
+          return { ...normalized };
+        }
+
+        const result: Record<string, unknown> = {};
+        Object.entries(select).forEach(([key, value]) => {
+          if (value && key in normalized) {
+            result[key] = (normalized as any)[key];
+          }
+        });
+
+        return result;
+      },
+      findMany: async ({ where, orderBy, take }: any = {}) => {
+        let records = state.auditLogs.slice();
+
+        if (where?.userId) {
+          records = records.filter((log) => log.userId === where.userId);
+        }
+
+        if (where?.eventType) {
+          records = records.filter((log) => log.eventType === where.eventType);
+        }
+
+        if (orderBy?.createdAt === 'desc') {
+          records = records.slice().sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+        } else if (orderBy?.createdAt === 'asc') {
+          records = records.slice().sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
+        }
+
+        if (typeof take === 'number') {
+          records = records.slice(0, take);
+        }
+
+        return records.map((record) => normalizeAuditLog(record));
+      },
     },
     event: {
       findMany: async ({ where, include, orderBy }: any = {}) => {
@@ -444,6 +811,8 @@ export function createTestPrismaClient(initial: Partial<TestPrismaState> = {}) {
       state.notifications = [];
       state.bets = [];
       state.settlements = [];
+      state.sessions = [];
+      state.auditLogs = [];
     },
   };
 }

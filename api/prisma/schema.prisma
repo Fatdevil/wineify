@@ -52,6 +52,7 @@ model User {
   email        String    @unique
   passwordHash String
   role         Role      @default(USER)
+  isBanned     Boolean   @default(false)
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
 
@@ -257,4 +258,16 @@ model UserAchievement {
   @@unique([userId, achievementId])
   @@index([userId])
   @@index([achievementId])
+}
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  userId    String?
+  eventType String
+  targetId  String?
+  ip        String?
+  meta      Json?
+  createdAt DateTime @default(now())
+
+  @@index([userId, eventType, createdAt])
 }

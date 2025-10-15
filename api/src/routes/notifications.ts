@@ -1,6 +1,8 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { requireAuth } from '../middleware/requireAuth';
+import { rateLimitAccount } from '../middleware/rateLimitAccount';
+import { audit } from '../middleware/audit';
 import { listNotifications, markNotificationRead } from '../services/notify.service';
 
 const router = Router();
@@ -19,6 +21,8 @@ const listSchema = z
   .strict();
 
 router.use(requireAuth);
+router.use(rateLimitAccount);
+router.use(audit);
 
 router.get('/notifications', async (req, res) => {
   const parseResult = listSchema.safeParse(req.query ?? {});
@@ -44,6 +48,12 @@ router.get('/notifications', async (req, res) => {
 router.post('/notifications/:id/read', async (req, res) => {
   try {
     const notification = await markNotificationRead(req.params.id, req.user!.id);
+
+    res.locals.audit = {
+      eventType: 'notifications:mark-read',
+      targetId: req.params.id,
+    };
+
     return res.status(200).json({ ok: true, notification });
   } catch (error) {
     const status = (error as any)?.statusCode ?? 400;

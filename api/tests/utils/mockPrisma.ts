@@ -1,9 +1,12 @@
-import { BetStatus, EventRole, Prisma, SettlementStatus, SubCompStatus } from '@prisma/client';
+import { BetStatus, EventRole, Prisma, Role, SettlementStatus, SubCompStatus } from '@prisma/client';
 import type { PrismaClient } from '@prisma/client';
 
 interface UserRecord {
   id: string;
   email: string;
+  role?: Role;
+  isBanned?: boolean;
+  createdAt?: Date;
 }
 
 interface EventRecord {
@@ -202,7 +205,13 @@ export function createMockPrisma() {
         return shaped;
       },
       create: async ({ data }: any) => {
-        const record: UserRecord = { id: data.id ?? `user-${db.users.length + 1}`, email: data.email };
+        const record: UserRecord = {
+          id: data.id ?? `user-${db.users.length + 1}`,
+          email: data.email,
+          role: data.role ?? Role.USER,
+          isBanned: data.isBanned ?? false,
+          createdAt: data.createdAt ?? new Date(),
+        };
         db.users.push(record);
         return { ...record };
       },

@@ -1,6 +1,8 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { requireAuth } from '../middleware/requireAuth';
+import { rateLimitAccount } from '../middleware/rateLimitAccount';
+import { audit } from '../middleware/audit';
 import { requireEventAdmin } from '../middleware/requireEventMember';
 import { createInvite, joinWithInvite, revokeInvite } from '../services/invites.service';
 
@@ -31,6 +33,8 @@ const joinSchema = z
   .strict();
 
 router.use(requireAuth);
+router.use(rateLimitAccount);
+router.use(audit);
 
 router.post('/events/:eventId/invites', requireEventAdmin((req) => req.params.eventId ?? null), async (req, res) => {
   const parseResult = createInviteSchema.safeParse(req.body ?? {});
@@ -48,6 +52,14 @@ router.post('/events/:eventId/invites', requireEventAdmin((req) => req.params.ev
   try {
     const eventId = req.params.eventId as string;
     const { inviteId, inviteCode } = await createInvite(eventId, req.user!.id, parseResult.data);
+
+    res.locals.audit = {
+      eventType: 'invites:create',
+      targetId: inviteId,
+      meta: {
+        eventId,
+      },
+    };
 
     return res.status(201).json({ ok: true, inviteId, inviteCode });
   } catch (error) {
@@ -74,6 +86,14 @@ router.post('/invites/join', async (req, res) => {
   try {
     const membership = await joinWithInvite(parseResult.data.inviteCode, req.user!.id);
 
+    res.locals.audit = {
+      eventType: 'invites:join',
+      targetId: membership?.eventId ?? null,
+      meta: {
+        membershipId: membership?.id ?? null,
+      },
+    };
+
     return res.status(200).json({ ok: true, membership });
   } catch (error) {
     const status = (error as any)?.statusCode ?? 400;
@@ -92,6 +112,11 @@ router.post('/invites/:id/revoke', async (req, res) => {
 
   try {
     const invite = await revokeInvite(id, req.user!.id);
+
+    res.locals.audit = {
+      eventType: 'invites:revoke',
+      targetId: id,
+    };
 
     return res.status(200).json({ ok: true, invite });
   } catch (error) {

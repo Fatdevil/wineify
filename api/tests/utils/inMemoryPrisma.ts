@@ -6,6 +6,7 @@ interface MockUserRecord {
   email: string;
   passwordHash: string;
   role: Role;
+  isBanned: boolean;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -49,6 +50,15 @@ const matchesWhere = (record: MockSessionRecord, where: Record<string, unknown>)
 export const createInMemoryPrisma = () => {
   const users = new Map<string, MockUserRecord>();
   const sessions = new Map<string, MockSessionRecord>();
+  const auditLogs: Array<{
+    id: string;
+    userId: string | null;
+    eventType: string;
+    targetId: string | null;
+    ip: string | null;
+    meta: unknown;
+    createdAt: Date;
+  }> = [];
   const subCompetitions = new Map<string, { id: string; eventId: string }>([
     ['abc', { id: 'abc', eventId: 'event-1' }],
   ]);
@@ -82,6 +92,7 @@ export const createInMemoryPrisma = () => {
           email: data.email,
           passwordHash: data.passwordHash,
           role: data.role ?? Role.USER,
+          isBanned: data.isBanned ?? false,
           createdAt: data.createdAt ?? now,
           updatedAt: data.updatedAt ?? now,
         };
@@ -89,6 +100,37 @@ export const createInMemoryPrisma = () => {
         users.set(id, record);
 
         return { ...record };
+      },
+      findMany: async ({ where, select, orderBy }: any = {}) => {
+        let records = Array.from(users.values());
+
+        if (where?.role) {
+          records = records.filter((user) => user.role === where.role);
+        }
+
+        if (orderBy?.createdAt === 'asc') {
+          records = records.sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
+        }
+
+        return records.map((record) => applySelect(record, select));
+      },
+      update: async ({ where, data, select }: any) => {
+        const { id } = where ?? {};
+
+        if (!id || !users.has(id)) {
+          throw new Error('User not found.');
+        }
+
+        const existing = users.get(id)!;
+        const updated: MockUserRecord = {
+          ...existing,
+          ...data,
+          updatedAt: data?.updatedAt ?? new Date(),
+        };
+
+        users.set(id, updated);
+
+        return applySelect(updated, select);
       },
     },
     session: {
@@ -153,6 +195,25 @@ export const createInMemoryPrisma = () => {
 
         return { count };
       },
+      findMany: async ({ where, select, orderBy }: any = {}) => {
+        let records = Array.from(sessions.values());
+
+        if (where?.userId) {
+          records = records.filter((session) => session.userId === where.userId);
+        }
+
+        if (where?.revokedAt === null) {
+          records = records.filter((session) => session.revokedAt === null);
+        }
+
+        if (orderBy?.createdAt === 'desc') {
+          records = records.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+        } else if (orderBy?.createdAt === 'asc') {
+          records = records.sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
+        }
+
+        return records.map((record) => applySelect(record, select));
+      },
     },
     subCompetition: {
       findUnique: async ({ where }: any) => {
@@ -197,6 +258,7 @@ export const createInMemoryPrisma = () => {
       sessions.clear();
       eventMemberships.clear();
       subCompetitions.clear();
+      auditLogs.length = 0;
       subCompetitions.set('abc', { id: 'abc', eventId: 'event-1' });
     },
     state: {
@@ -211,6 +273,9 @@ export const createInMemoryPrisma = () => {
       },
       get subCompetitions() {
         return subCompetitions;
+      },
+      get auditLogs() {
+        return auditLogs;
       },
     },
   };
