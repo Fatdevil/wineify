@@ -4,12 +4,16 @@ import { prisma } from '../lib/prisma';
 import { generateSettlements } from '../modules/settlements/settlements.service';
 import { getUserStats, updateStatsForSettlement } from '../services/stats.service';
 import { requireAuth } from '../middleware/requireAuth';
+import { rateLimitAccount } from '../middleware/rateLimitAccount';
+import { audit } from '../middleware/audit';
 import { requireEventRole } from '../services/acl.service';
 import { notify, notifyMany } from '../services/notify.service';
 
 const router = Router();
 
 router.use(requireAuth);
+router.use(rateLimitAccount);
+router.use(audit);
 
 router.get('/', async (req, res) => {
   const settlements = await prisma.settlement.findMany({
@@ -105,6 +109,15 @@ router.post('/:id/mark-received', async (req, res) => {
     await notifyMany(recipients, 'SETTLEMENT_RECEIVED', {
       obligationId: settlement.id,
     });
+
+    res.locals.audit = {
+      eventType: 'settlements:mark-received',
+      targetId: id,
+      meta: {
+        payerId,
+        payeeId,
+      },
+    };
 
     return res.status(200).json({
       ok: true,

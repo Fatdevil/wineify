@@ -28,6 +28,10 @@ const resetDb = () => {
 };
 
 const seedBaseData = () => {
+  db.users.push(
+    { id: 'admin-1', email: 'admin@example.com', role: Role.ADMIN, isBanned: false, createdAt: new Date('2024-01-01') },
+    { id: 'user-1', email: 'user@example.com', role: Role.USER, isBanned: false, createdAt: new Date('2024-01-02') },
+  );
   db.events.push({ id: 'event-1', name: 'Championship', houseCut: 0.05 });
   db.eventMemberships.push(
     { id: 'membership-1', eventId: 'event-1', userId: 'admin-1', role: EventRole.ADMIN, createdAt: new Date('2024-01-01') },

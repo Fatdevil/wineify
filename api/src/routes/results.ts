@@ -4,6 +4,8 @@ import { prisma } from '../lib/prisma';
 import { recordResult } from '../modules/results/results.service';
 import { computePayouts } from '../modules/results/payouts.service';
 import { requireAuth } from '../middleware/requireAuth';
+import { rateLimitAccount } from '../middleware/rateLimitAccount';
+import { audit } from '../middleware/audit';
 import { requireEventRole } from '../services/acl.service';
 import { notifyEventMembers } from '../services/notify.service';
 import { z } from 'zod';
@@ -11,6 +13,8 @@ import { z } from 'zod';
 const router = Router();
 
 router.use(requireAuth);
+router.use(rateLimitAccount);
+router.use(audit);
 
 router.get('/', async (req, res) => {
   const results = await prisma.result.findMany({
@@ -134,6 +138,14 @@ router.post('/', async (req, res) => {
 
   try {
     const payload = await recordResult(subCompetitionId, winningEntryId);
+
+    res.locals.audit = {
+      eventType: 'results:record',
+      targetId: subCompetitionId,
+      meta: {
+        winningEntryId,
+      },
+    };
 
     await notifyEventMembers(subCompetition.eventId, 'RESULT_POSTED', {
       eventId: payload.eventId,

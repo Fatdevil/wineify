@@ -1,4 +1,4 @@
-import type { Role } from '@prisma/client';
+import type { Prisma, Role } from '@prisma/client';
 
 declare global {
   namespace Express {
@@ -9,6 +9,14 @@ declare global {
 
     interface Request {
       user?: AuthenticatedUser;
+    }
+
+    interface Locals {
+      audit?: {
+        eventType?: string;
+        targetId?: string | null;
+        meta?: Prisma.JsonValue;
+      };
     }
   }
 }

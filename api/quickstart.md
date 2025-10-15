@@ -133,6 +133,20 @@ curl -X POST http://localhost:3000/api/notifications/NOTIFICATION_ID/read \
   -H "Authorization: Bearer $access"
 ```
 
+## Monitoring & Rate Limits
+
+- All authenticated routes apply per-account throttling. Signed-in users receive 60 requests/minute, while anonymous callers are
+  limited to 30 requests/minute. Breaches trigger `429 Too Many Requests` responses and notify admins when repeated more than
+  three times within an hour.
+- Sensitive POST/PUT/DELETE operations emit audit entries in the `AuditLog` table capturing `eventType`, `targetId`, caller, IP,
+  and optional metadata. Admins can review entries via `GET /api/admin/audit` or the in-app console.
+- Admin-only management endpoints:
+  - `GET /api/admin/users` — list accounts with active sessions.
+  - `POST /api/admin/users/:id/ban` / `POST /api/admin/users/:id/unban` — toggle account access (revoking refresh sessions on ban).
+  - `GET /api/admin/audit` — filter logs by `userId`, `eventType`, and `limit`.
+- The friends-betting front-end now exposes a ⚙️ Admin console (visible only to admins) with sortable tables for Users, Audit Logs,
+  and Active Sessions plus inline Ban/Unban controls.
+
 ## Running the service
 
 ```bash

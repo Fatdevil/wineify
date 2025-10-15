@@ -3,6 +3,8 @@ import { EventRole } from '@prisma/client';
 import { z } from 'zod';
 import { prisma } from '../lib/prisma';
 import { requireAuth } from '../middleware/requireAuth';
+import { rateLimitAccount } from '../middleware/rateLimitAccount';
+import { audit } from '../middleware/audit';
 import { requireEventAdmin, requireEventMember } from '../middleware/requireEventMember';
 import { changeMemberRole } from '../services/acl.service';
 
@@ -15,6 +17,8 @@ const updateRoleSchema = z
   .strict();
 
 router.use(requireAuth);
+router.use(rateLimitAccount);
+router.use(audit);
 
 router.get('/events/:eventId/members', requireEventMember((req) => req.params.eventId ?? null), async (req, res) => {
   const eventId = req.params.eventId as string;
@@ -58,6 +62,16 @@ router.post(
 
     try {
       const membership = await changeMemberRole(eventId, targetUserId, parseResult.data.role, req.user!.id);
+
+      res.locals.audit = {
+        eventType: 'memberships:update-role',
+        targetId: targetUserId,
+        meta: {
+          eventId,
+          role: parseResult.data.role,
+        },
+      };
+
       return res.status(200).json({ ok: true, membership });
     } catch (error) {
       const status = (error as any)?.statusCode ?? 400;
