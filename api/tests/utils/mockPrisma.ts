@@ -1,4 +1,4 @@
-import { BetStatus, Prisma, SettlementStatus, SubCompStatus } from '@prisma/client';
+import { BetStatus, EventRole, Prisma, SettlementStatus, SubCompStatus } from '@prisma/client';
 import type { PrismaClient } from '@prisma/client';
 
 interface UserRecord {
@@ -10,6 +10,14 @@ interface EventRecord {
   id: string;
   name: string;
   houseCut?: number;
+}
+
+interface EventMembershipRecord {
+  id: string;
+  eventId: string;
+  userId: string;
+  role: EventRole;
+  createdAt: Date;
 }
 
 interface SubCompetitionRecord {
@@ -84,9 +92,19 @@ interface UserAchievementRecord {
   achievedAt: Date;
 }
 
+interface NotificationRecord {
+  id: string;
+  userId: string;
+  type: string;
+  payload: any;
+  readAt: Date | null;
+  createdAt: Date;
+}
+
 export interface MockDatabase {
   users: UserRecord[];
   events: EventRecord[];
+  eventMemberships: EventMembershipRecord[];
   subCompetitions: SubCompetitionRecord[];
   participants: ParticipantRecord[];
   bets: BetRecord[];
@@ -95,6 +113,7 @@ export interface MockDatabase {
   stats: StatsRecord[];
   achievements: AchievementRecord[];
   userAchievements: UserAchievementRecord[];
+  notifications: NotificationRecord[];
 }
 
 function createResultId(index: number) {
@@ -113,6 +132,7 @@ export function createMockPrisma() {
   const db: MockDatabase = {
     users: [],
     events: [],
+    eventMemberships: [],
     subCompetitions: [],
     participants: [],
     bets: [],
@@ -121,11 +141,24 @@ export function createMockPrisma() {
     stats: [],
     achievements: [],
     userAchievements: [],
+    notifications: [],
   };
 
   const prismaMock: Record<string, any> = {
-    $transaction: async <T>(callback: (tx: PrismaClient) => Promise<T>): Promise<T> => {
-      return callback(prismaMock as PrismaClient);
+    $transaction: async <T>(arg: any): Promise<T> => {
+      if (typeof arg === 'function') {
+        return arg(prismaMock as PrismaClient);
+      }
+
+      if (Array.isArray(arg)) {
+        const results: any[] = [];
+        for (const operation of arg) {
+          results.push(await operation);
+        }
+        return results as T;
+      }
+
+      throw new Error('Unsupported transaction input in mock Prisma client.');
     },
     user: {
       findMany: async ({ where, select }: any) => {
@@ -189,7 +222,69 @@ export function createMockPrisma() {
           }));
         }
 
+        if (include?.memberships) {
+          base.memberships = db.eventMemberships
+            .filter((membership) => membership.eventId === record.id)
+            .map((membership) => ({ ...membership }));
+        }
+
         return base;
+      },
+    },
+    eventMembership: {
+      findUnique: async ({ where }: any) => {
+        if (where?.id) {
+          const record = db.eventMemberships.find((membership) => membership.id === where.id);
+          return record ? { ...record } : null;
+        }
+
+        if (where?.eventId_userId) {
+          const { eventId, userId } = where.eventId_userId;
+          const record = db.eventMemberships.find(
+            (membership) => membership.eventId === eventId && membership.userId === userId,
+          );
+          return record ? { ...record } : null;
+        }
+
+        return null;
+      },
+      findMany: async ({ where }: any = {}) => {
+        let records = db.eventMemberships.slice();
+
+        if (where?.eventId) {
+          records = records.filter((membership) => membership.eventId === where.eventId);
+        }
+
+        if (where?.userId) {
+          records = records.filter((membership) => membership.userId === where.userId);
+        }
+
+        return records.map((membership) => ({ ...membership }));
+      },
+      create: async ({ data }: any) => {
+        const record: EventMembershipRecord = {
+          id: data.id ?? `membership-${db.eventMemberships.length + 1}`,
+          eventId: data.eventId,
+          userId: data.userId,
+          role: data.role,
+          createdAt: data.createdAt ?? new Date(),
+        };
+        db.eventMemberships.push(record);
+        return { ...record };
+      },
+      update: async ({ where, data }: any) => {
+        const index = db.eventMemberships.findIndex((membership) => membership.id === where.id);
+        if (index === -1) {
+          throw new Error('Membership not found');
+        }
+
+        const existing = db.eventMemberships[index];
+        const updated: EventMembershipRecord = {
+          ...existing,
+          ...data,
+        };
+        db.eventMemberships[index] = updated;
+        return { ...updated };
       },
     },
     subCompetition: {
@@ -255,7 +350,60 @@ export function createMockPrisma() {
         const base: any = { ...record };
 
         if (include?.subCompetition) {
-          base.subCompetition = db.subCompetitions.find((sub) => sub.id === record.subCompetitionId) ?? null;
+          const subCompetitionRecord = db.subCompetitions.find((sub) => sub.id === record.subCompetitionId) ?? null;
+          if (!subCompetitionRecord) {
+            base.subCompetition = null;
+          } else {
+            const subPayload: any = { ...subCompetitionRecord };
+            const subInclude = include.subCompetition.include;
+
+            if (subInclude?.event) {
+              const eventRecord = db.events.find((event) => event.id === subCompetitionRecord.eventId) ?? null;
+              if (!eventRecord) {
+                subPayload.event = null;
+              } else if (subInclude.event.select) {
+                const eventPayload: any = {};
+                if (subInclude.event.select.id) {
+                  eventPayload.id = eventRecord.id;
+                }
+                if (subInclude.event.select.name) {
+                  eventPayload.name = eventRecord.name;
+                }
+                if (subInclude.event.select.memberships) {
+                  const membershipSelect = subInclude.event.select.memberships.select ?? {};
+                  eventPayload.memberships = db.eventMemberships
+                    .filter((membership) => membership.eventId === eventRecord.id)
+                    .map((membership) => {
+                      if (Object.keys(membershipSelect).length === 0) {
+                        return { ...membership };
+                      }
+                      const shaped: any = {};
+                      if (membershipSelect.userId) {
+                        shaped.userId = membership.userId;
+                      }
+                      if (membershipSelect.role) {
+                        shaped.role = membership.role;
+                      }
+                      if (membershipSelect.id) {
+                        shaped.id = membership.id;
+                      }
+                      return shaped;
+                    });
+                }
+                subPayload.event = eventPayload;
+              } else {
+                subPayload.event = { ...eventRecord };
+              }
+            }
+
+            if (subInclude?.participants) {
+              subPayload.participants = db.participants.filter(
+                (participant) => participant.subCompetitionId === subCompetitionRecord.id,
+              );
+            }
+
+            base.subCompetition = subPayload;
+          }
         }
 
         if (include?.participant) {
@@ -421,6 +569,45 @@ export function createMockPrisma() {
           ...record,
           bet: include?.bet ? db.bets.find((bet) => bet.id === record.betId) ?? null : undefined,
         }));
+      },
+    },
+    notification: {
+      create: async ({ data }: any) => {
+        const record: NotificationRecord = {
+          id: data.id ?? `notification-${db.notifications.length + 1}`,
+          userId: data.userId,
+          type: data.type,
+          payload: data.payload,
+          readAt: data.readAt ?? null,
+          createdAt: data.createdAt ?? new Date(),
+        };
+        db.notifications.push(record);
+        return { ...record };
+      },
+      findMany: async ({ where, orderBy, take }: any = {}) => {
+        let records = db.notifications.slice();
+        if (where?.userId) {
+          records = records.filter((notification) => notification.userId === where.userId);
+        }
+        if (orderBy?.createdAt === 'desc') {
+          records = records.slice().sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+        }
+        if (typeof take === 'number') {
+          records = records.slice(0, take);
+        }
+        return records.map((record) => ({ ...record }));
+      },
+      findUnique: async ({ where }: any) => {
+        const record = db.notifications.find((notification) => notification.id === where.id);
+        return record ? { ...record } : null;
+      },
+      update: async ({ where, data }: any) => {
+        const record = db.notifications.find((notification) => notification.id === where.id);
+        if (!record) {
+          throw new Error('Notification not found');
+        }
+        Object.assign(record, data);
+        return { ...record };
       },
     },
     achievement: {

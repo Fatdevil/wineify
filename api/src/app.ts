@@ -10,6 +10,9 @@ import resultsRouter from './routes/results';
 import settlementsRouter from './routes/settlements';
 import statsRouter from './routes/stats';
 import achievementsRouter from './routes/achievements';
+import invitesRouter from './routes/invites';
+import membershipsRouter from './routes/memberships';
+import notificationsRouter from './routes/notifications';
 import { env } from './config/env';
 
 const limiter = rateLimit({
@@ -45,5 +48,8 @@ app.use('/results', resultsRouter);
 app.use('/settlements', settlementsRouter);
 app.use('/stats', statsRouter);
 app.use('/achievements', achievementsRouter);
+app.use(invitesRouter);
+app.use(membershipsRouter);
+app.use(notificationsRouter);
 
 export { app };

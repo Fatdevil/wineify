@@ -10,6 +10,10 @@ body {
   background: radial-gradient(circle at top, rgba(59, 130, 246, 0.15), transparent 60%), #0f1729;
 }
 
+.hidden {
+  display: none !important;
+}
+
 a {
   color: inherit;
 }
@@ -179,6 +183,46 @@ a {
   margin-top: 16px;
 }
 
+.card__tabs {
+  display: flex;
+  gap: 10px;
+  margin: 16px 0 12px;
+}
+
+.card__tab {
+  border: none;
+  border-radius: 999px;
+  padding: 8px 16px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  background-color: rgba(30, 41, 59, 0.6);
+  color: #cbd5f5;
+  cursor: pointer;
+  transition: background-color 0.2s ease, color 0.2s ease, transform 0.2s ease;
+}
+
+.card__tab:hover {
+  transform: translateY(-1px);
+  background-color: rgba(59, 130, 246, 0.6);
+  color: white;
+}
+
+.card__tab--active {
+  background: linear-gradient(135deg, #6366f1, #8b5cf6);
+  color: white;
+  box-shadow: 0 10px 20px rgba(99, 102, 241, 0.35);
+}
+
+.card__section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.card__section.hidden {
+  display: none;
+}
+
 .button {
   display: inline-flex;
   justify-content: center;
@@ -203,6 +247,17 @@ a {
 .button:disabled {
   cursor: not-allowed;
   opacity: 0.6;
+}
+
+.button--secondary {
+  background: rgba(30, 41, 59, 0.85);
+  color: #cbd5f5;
+  box-shadow: none;
+}
+
+.button--secondary:hover:not(:disabled) {
+  background: rgba(51, 65, 85, 0.95);
+  color: white;
 }
 
 .status-pill {
@@ -239,6 +294,73 @@ a {
 .status-danger {
   background: rgba(248, 113, 113, 0.2);
   color: #f87171;
+}
+
+.invite-card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.invite-card__form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+}
+
+.invite-card__input {
+  flex: 1;
+  min-width: 200px;
+  border-radius: 12px;
+  border: 1px solid rgba(148, 163, 184, 0.3);
+  background: rgba(15, 23, 42, 0.6);
+  padding: 10px 12px;
+  color: #e2e8f0;
+}
+
+.invite-card__status {
+  margin: 0;
+  font-size: 0.85rem;
+  color: #94a3b8;
+}
+
+.invite-card__status.error {
+  color: #f87171;
+}
+
+.invite-code {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  background: rgba(30, 41, 59, 0.6);
+  border-radius: 12px;
+  padding: 10px 12px;
+}
+
+.invite-code input {
+  flex: 1;
+  border: none;
+  background: transparent;
+  color: inherit;
+  font-family: inherit;
+  font-size: 0.9rem;
+}
+
+.invite-members {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.invite-members__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 0.85rem;
 }
 
 .status-muted {
@@ -660,6 +782,108 @@ a {
 
 .achievement-card--locked .achievement-card__reward {
   color: #64748b;
+}
+
+.notifications {
+  align-self: flex-end;
+  position: relative;
+  margin-left: auto;
+}
+
+.notifications.hidden {
+  display: none;
+}
+
+.notifications__button {
+  position: relative;
+  border: none;
+  background: transparent;
+  font-size: 1.5rem;
+  cursor: pointer;
+  color: #e2e8f0;
+}
+
+.notifications__badge {
+  position: absolute;
+  top: -6px;
+  right: -10px;
+  min-width: 20px;
+  padding: 2px 6px;
+  border-radius: 999px;
+  background: #f97316;
+  color: #0f1729;
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-align: center;
+}
+
+.notifications__badge.hidden {
+  display: none;
+}
+
+.notifications__panel {
+  position: absolute;
+  top: 36px;
+  right: 0;
+  width: min(320px, 80vw);
+  background: rgba(15, 23, 42, 0.95);
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  border-radius: 16px;
+  box-shadow: 0 18px 45px rgba(15, 23, 42, 0.6);
+  padding: 12px;
+  z-index: 20;
+}
+
+.notifications__panel.hidden {
+  display: none;
+}
+
+.notifications__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-height: 320px;
+  overflow-y: auto;
+}
+
+.notifications__item {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 10px;
+  border-radius: 12px;
+  background: rgba(30, 41, 59, 0.6);
+}
+
+.notifications__item--unread {
+  border: 1px solid rgba(59, 130, 246, 0.4);
+}
+
+.notifications__message {
+  font-size: 0.85rem;
+  color: #e2e8f0;
+}
+
+.notifications__time {
+  font-size: 0.75rem;
+  color: #94a3b8;
+}
+
+.notifications__action {
+  align-self: flex-start;
+  border: none;
+  background: transparent;
+  color: #60a5fa;
+  cursor: pointer;
+  font-size: 0.75rem;
+  padding: 0;
+}
+
+.notifications__action:hover {
+  text-decoration: underline;
 }
 
 @media (max-width: 640px) {
