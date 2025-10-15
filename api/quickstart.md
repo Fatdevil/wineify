@@ -99,6 +99,32 @@ Transactions are appended whenever bets are placed, winnings are settled, refund
 service helpers (`recordBetPlacement`, `recordBetPayout`, `recordBetRefund`, and `recordHouseCut`) can be reused inside new
 modules to keep the ledger consistent.
 
+## Buy Units
+
+The mock monetisation layer lets players top up their wallets using a two-step flow. Each unit currently costs €0.50; additional
+currencies can be configured by inserting rows into the `CurrencyRate` table (1 EUR → target currency multiplier).
+
+1. Create a pending purchase session with the desired unit amount and currency:
+   ```bash
+   curl -X POST http://localhost:3000/api/payments/create-session \
+     -H "Authorization: Bearer $access" \
+     -H "Content-Type: application/json" \
+     -d '{"units":200,"currency":"EUR"}'
+   ```
+   The response returns a `sessionId` and quoted totals in both EUR and the requested currency.
+2. Confirm the session once the mock checkout succeeds. This marks the purchase as complete and credits the wallet.
+   ```bash
+   curl -X POST http://localhost:3000/api/payments/confirm \
+     -H "Authorization: Bearer $access" \
+     -H "Content-Type: application/json" \
+     -d '{"sessionId":"SESSION_ID_FROM_STEP_1"}'
+   ```
+3. Historical purchases (including status, currency amounts, and wallet credit timestamps) are available via:
+   ```bash
+   curl http://localhost:3000/api/payments/history \
+     -H "Authorization: Bearer $access"
+   ```
+
 ## Private Events & Invites
 
 Events are private by default. Users must hold an active membership to read event data, place bets, or view results.
